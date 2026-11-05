@@ -1,0 +1,69 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: extractions/setup-just@v4
+      - name: Set app version
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a vMAJOR.MINOR.PATCH tag" >&2
+            exit 1
+          fi
+          release_version="${BASH_REMATCH[1]}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $release_version" Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $release_version" Resources/Info.plist
+      - run: just test
+      - run: just build
+        env:
+          OPENSESAME_BUILD_CONFIGURATION: release
+      - run: just check-config
+      - name: Archive app and notices
+        shell: bash
+        run: |
+          archive="dist/OpenSesame-${GITHUB_REF_NAME}-macos-$(uname -m).zip"
+          staging="$(mktemp -d)"
+          cp -R dist/OpenSesame.app "$staging/"
+          cp LICENSE README.md config.example.toml "$staging/"
+          cp -R Resources/Notices "$staging/"
+          ditto -c -k --sequesterRsrc "$staging" "$archive"
+          rm -rf "$staging"
+      - name: Generate release notes
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          version: latest
+          args: --current --strip header
+        env:
+          OUTPUT: ${{ runner.temp }}/opensesame-changes.md
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGELOG_FILE: ${{ steps.changelog.outputs.changelog }}
+        shell: bash
+        run: |
+          notes="$(mktemp)"
+          cat "$CHANGELOG_FILE" > "$notes"
+          cat >> "$notes" <<'NOTES'
+
+          ## Installation
+
+          Native macOS menu bar app, built for the architecture named in the archive.
+
+          Download and unzip the archive for your Mac. Move OpenSesame.app to
+          /Applications, open it, and enable OpenSesame in System Settings →
+          Privacy & Security → Accessibility. Preferences live in the menu bar.
+
+          This build is ad-hoc signed and is not notarized.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" dist/OpenSesame-*.zip --verify-tag --notes-file "$notes"
+          rm -f "$notes"

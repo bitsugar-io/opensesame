@@ -1,0 +1,23 @@
+# OpenSesame — panel edits save to ~/.config/opensesame/config.toml.
+# Save external edits, then use Reload in the menu bar panel.
+theme = "glitch" # glitch, catppuccin, tokyo-night, gruvbox, dracula, custom
+appearance = "system" # system, light, dark
+
+[shortcut]
+keyCode = 49
+modifiers = ["control", "shift"]
+key = "Space"
+
+[hints]
+size = 16 # Whole points, 10–22.
+menu_bar = true
+minimum_length = 2 # 1, 2, or 3; grows uniformly when needed.
+alphabet = "sadfjklewcmpgh"
+prefix = ""
+
+[apps]
+mode = "except" # Use only for an allowlist; except for exclusions.
+list = [] # Friendly app names or bundle identifiers.
+
+# Custom colors can be edited on the Style page. The saved configuration
+# includes [custom.light] and [custom.dark] with all seven palette colors.

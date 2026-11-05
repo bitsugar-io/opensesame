@@ -1,0 +1,44 @@
+name: Swift
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: swift-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
+      - name: Toolchain
+        id: toolchain
+        run: |
+          swift --version
+          echo "version=$(swift --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            .build/cache
+            .build/checkouts
+            .build/repositories
+          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.resolved') }}
+      - run: just test
+  release-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          version: latest
+          args: --unreleased --strip header
+        env:
+          OUTPUT: ${{ runner.temp }}/opensesame-preview.md
+      - run: PATH="$RUNNER_TEMP/git-cliff/bin:$PATH" bash scripts/test-release-notes.sh

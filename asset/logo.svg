@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="220" viewBox="0 0 740 220">
+<rect width="740" height="220" rx="20" fill="#100914"/>
+<g fill="none" stroke="#ff208f" stroke-width="3"><path d="M42 72V45h28M670 45h28v27M42 148v27h28M670 175h28v-27"/><path d="M46 87h13m622 48h14" stroke="#56f5df"/></g>
+<text x="365" y="129" text-anchor="middle" fill="#56f5df" font-family="Menlo,monospace" font-weight="900" font-size="48" letter-spacing="3">OpenSesame</text>
+<text x="372" y="126" text-anchor="middle" fill="#ff208f" font-family="Menlo,monospace" font-weight="900" font-size="48" letter-spacing="3">OpenSesame</text>
+<path d="M155 93h127m205 30h93" stroke="#100914" stroke-width="4"/>
+<text x="370" y="165" text-anchor="middle" fill="#c6a8bd" font-family="Menlo,monospace" font-size="11" letter-spacing="4">LESS MOUSE. MORE MAYHEM.</text>
+</svg>

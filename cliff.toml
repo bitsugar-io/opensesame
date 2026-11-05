@@ -1,0 +1,40 @@
+# Match the changelog groups used by grind and jot's GoReleaser configs.
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.breaking %}**BREAKING:** {% endif %}{% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | split(pat="\n") | first }} ({{ commit.id | truncate(length=7, end="") }})
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = true
+# Invisible prefixes control group order without appearing in release notes.
+commit_parsers = [
+  { message = '^test(\([^)]+\))?:', skip = true },
+  { message = '^chore(\([^)]+\))?:', skip = true },
+  { message = '(?i)merge conflict', skip = true },
+  { message = '^Merge (pull request|remote-tracking branch|branch)', skip = true },
+  { message = '^feat(\([^)]+\))?!?:', group = '<!-- 00 -->Features' },
+  { message = '^fix(\([^)]+\))?!?:', group = '<!-- 01 -->Bug fixes' },
+  { message = '^perf(\([^)]+\))?!?:', group = '<!-- 02 -->Performance' },
+  { message = '^refactor(\([^)]+\))?!?:', group = '<!-- 03 -->Refactor' },
+  { message = '^docs(\([^)]+\))?!?:', group = '<!-- 04 -->Docs' },
+  { message = '^ci(\([^)]+\))?!?:', group = '<!-- 05 -->CI' },
+  { message = '^build(\([^)]+\))?!?:', group = '<!-- 06 -->Build' },
+  { message = '^style(\([^)]+\))?!?:', group = '<!-- 07 -->Style' },
+  { message = '.*', group = '<!-- 99 -->Others' },
+]
+filter_commits = false
+tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+$'
+# Ignore newer tags outside the checked-out release's history.
+topo_order = true
+use_branch_tags = true
+sort_commits = "oldest"

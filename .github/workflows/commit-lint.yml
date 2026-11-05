@@ -1,0 +1,19 @@
+name: Commit Lint
+on:
+  pull_request:
+    branches: [ "main" ]
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  build:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: webiny/action-conventional-commits@v1.4.2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
