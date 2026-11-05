@@ -30,7 +30,7 @@ stop:
 
 # Reset only OpenSesame's Accessibility authorization; keep the build intact.
 clean:
-    tccutil reset Accessibility io.bitsugar.opensesame
+    zsh scripts/reset-accessibility.sh
 
 # Format the justfile.
 just-fmt:

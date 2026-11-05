@@ -9,6 +9,7 @@ fixture="${fixture:A}"
 trap 'rm -rf "$fixture"' EXIT
 mkdir -p "$fixture/scripts" "$fixture/bin"
 cp scripts/run-app.sh "$fixture/scripts/run-app.sh"
+cp scripts/reset-accessibility.sh "$fixture/scripts/reset-accessibility.sh"
 cp justfile "$fixture/justfile"
 cat > "$fixture/scripts/build-app.sh" <<'SH'
 #!/bin/zsh
@@ -88,4 +89,25 @@ if OPENSESAME_TEST_BUILD_FAIL=1 just --justfile "$fixture/justfile" start > "$fi
     exit 1
 fi
 [[ -e "$fixture/build.log" && ! -e "$fixture/launch.log" ]]
+# Permission resets use a fake tccutil, never the user's real TCC database.
+cat > "$fixture/bin/tccutil" <<'SH'
+#!/bin/zsh
+[[ "$*" == 'reset Accessibility io.bitsugar.opensesame' ]] || exit 98
+case "${TEST_RESET_MODE:-success}" in
+    success) print 'Successfully reset Accessibility approval status' ;;
+    missing) print -u2 'tccutil: No such bundle identifier "io.bitsugar.opensesame": (OSStatus error -10814.)'; exit 64 ;;
+    failure) print -u2 'Permission reset failed'; exit 64 ;;
+esac
+SH
+chmod +x "$fixture/bin/tccutil"
+just --justfile "$fixture/justfile" clean > "$fixture/reset-success.log"
+TEST_RESET_MODE=missing just --justfile "$fixture/justfile" clean > "$fixture/reset-missing.log"
+[[ "$(< "$fixture/reset-missing.log")" == *'no Accessibility reset is needed'* ]]
+if TEST_RESET_MODE=failure just --justfile "$fixture/justfile" clean > "$fixture/reset-failure.log" 2>&1; then
+    print -u2 'Expected clean to preserve an unrelated reset failure.'
+    exit 1
+fi
+[[ "$(< "$fixture/reset-failure.log")" == *'Permission reset failed'* ]]
+print '3 Accessibility reset fixture checks passed (success, unregistered app, unrelated failure).'
+
 print '6 workflow tests passed (default lists only, run without building, existing-instance protection, missing build, start builds and launches, and build failure).'

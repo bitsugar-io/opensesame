@@ -105,9 +105,14 @@ final class Controller: ObservableObject {
         }
     }
     func requestPermission(showSettings: Bool = true) {
-        let result = accessibilityPermission.request(showSettings: showSettings)
-        trusted = AXIsProcessTrusted()
-        if result != noErr { message = "Could not register OpenSesame with macOS (\(result))." }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await self.accessibilityPermission.requestWithRetry(showSettings: showSettings)
+            self.trusted = AXIsProcessTrusted()
+            if result != noErr {
+                self.message = "macOS could not register OpenSesame (error \(result)). Use the Accessibility permission button to retry."
+            }
+        }
     }
     private var hasPagedLedger: Bool { overlays.hasPagedChoices || (lastDiscovery?.scopeFrame != nil && !targets.isEmpty && targets.allSatisfy { $0.metadata.role == "AXMenuItem" }) }
     private func syncInputRouting() {
