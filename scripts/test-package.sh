@@ -10,6 +10,8 @@ mkdir -p "$fixture/scripts" "$fixture/Resources" "$fixture/Sources/Example" "$fi
 cp scripts/build-app.sh "$fixture/scripts/build-app.sh"
 cp Resources/Info.plist "$fixture/Resources/Info.plist"
 cp Resources/OpenSesame.icns "$fixture/Resources/OpenSesame.icns"
+cp LICENSE "$fixture/LICENSE"
+cp -R Resources/Notices "$fixture/Resources/Notices"
 print '// fixture' > "$fixture/Sources/Example/main.swift"
 print '// fixture manifest' > "$fixture/Package.swift"
 print 'binary' > "$fixture/.build/fake-bin/OpenSesame"
@@ -34,6 +36,8 @@ app="$fixture/dist/OpenSesame.app"
 zsh "$fixture/scripts/build-app.sh" > "$fixture/build.log"
 fingerprint="$(/usr/libexec/PlistBuddy -c 'Print :OpenSesameBuildFingerprint' "$app/Contents/Info.plist")"
 cmp -s Resources/OpenSesame.icns "$app/Contents/Resources/OpenSesame.icns"
+cmp -s LICENSE "$app/Contents/Resources/LICENSE"
+cmp -s Resources/Notices/TOMLDecoder-LICENSE.txt "$app/Contents/Resources/Notices/TOMLDecoder-LICENSE.txt"
 [[ ${#fingerprint} == 12 && "$fingerprint" != *[^0-9a-f]* ]]
 [[ "$(< "$fixture/sign.log")" == signed ]]
 
@@ -58,4 +62,18 @@ if OPENSESAME_TEST_PROCESS_STATE=0 zsh "$fixture/scripts/build-app.sh" > "$fixtu
 fi
 cmp -s "$fixture/before.plist" "$app/Contents/Info.plist"
 [[ "$(wc -l < "$fixture/sign.log" | tr -d ' ')" == 2 ]]
-print '4 packaging checks passed (source stamp, unchanged signature, changed source, running-app protection).'
+# A certificate change must not preserve an old signature or overwrite a live app.
+if OPENSESAME_TEST_PROCESS_STATE=0 OPENSESAME_SIGNING_IDENTITY=fixture-certificate zsh "$fixture/scripts/build-app.sh" > "$fixture/signing-running.log" 2>&1; then
+    print -u2 'Expected a new signing identity to be rejected while app is running.'
+    exit 1
+fi
+cmp -s "$fixture/before.plist" "$app/Contents/Info.plist"
+OPENSESAME_SIGNING_IDENTITY=fixture-certificate zsh "$fixture/scripts/build-app.sh" > "$fixture/new-identity.log"
+[[ "$(wc -l < "$fixture/sign.log" | tr -d ' ')" == 3 ]]
+OPENSESAME_SIGNING_IDENTITY=fixture-certificate zsh "$fixture/scripts/build-app.sh" > "$fixture/same-identity.log"
+[[ "$(wc -l < "$fixture/sign.log" | tr -d ' ')" == 3 ]]
+print 'notice change' >> "$fixture/Resources/Notices/TOMLDecoder-LICENSE.txt"
+OPENSESAME_SIGNING_IDENTITY=fixture-certificate zsh "$fixture/scripts/build-app.sh" > "$fixture/notice-change.log"
+cmp -s "$fixture/Resources/Notices/TOMLDecoder-LICENSE.txt" "$app/Contents/Resources/Notices/TOMLDecoder-LICENSE.txt"
+[[ "$(wc -l < "$fixture/sign.log" | tr -d ' ')" == 4 ]]
+print '7 packaging checks passed (source stamp, unchanged signature, changed source, running-app protection, bundled licenses, signing identity, notice changes).'

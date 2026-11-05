@@ -1,0 +1,34 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+github:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Package.swift"
+          - "Package.resolved"
+source:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Sources/**"
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Tests/**"
+          - "scripts/test-*.sh"
+branding:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Sources/OpenSesameBrand/**"
+          - "Sources/OpenSesameCore/Theme.swift"
+          - "asset/**"
+build:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "justfile"
+          - "scripts/**"
+          - "Resources/**"

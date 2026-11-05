@@ -9,45 +9,18 @@ if CommandLine.arguments.dropFirst().first == "--render-previews" {
         fputs("Usage: OpenSesame --render-previews <output-directory>\n", stderr)
         exit(2)
     }
+    #if DEBUG
     do {
-        _ = NSApplication.shared
-        NSApp.setActivationPolicy(.prohibited)
-        NSApp.appearance = NSAppearance(named: .darkAqua)
-        let directory = URL(fileURLWithPath: CommandLine.arguments[2])
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let model = Controller()
-        model.trusted = true
-        for page in DashboardPage.allCases {
-            let view = NSHostingView(rootView: Dashboard(model: model, page: page))
-            view.appearance = NSAppearance(named: .darkAqua)
-            view.frame = CGRect(origin: .zero, size: view.fittingSize)
-            view.layoutSubtreeIfNeeded()
-            guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
-            view.cacheDisplay(in: view.bounds, to: bitmap)
-            try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("settings-\(page.rawValue.lowercased()).png"))
-        }
-        for theme in AppTheme.allCases {
-            model.theme = theme
-            for mode in [AppearanceMode.dark, .light] {
-                model.appearanceMode = mode
-                NSApp.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
-                let view = NSHostingView(rootView: Dashboard(model: model, page: .style))
-                view.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
-                view.frame = CGRect(origin: .zero, size: view.fittingSize)
-                view.layoutSubtreeIfNeeded()
-                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
-                view.cacheDisplay(in: view.bounds, to: bitmap)
-                try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("theme-\(theme.rawValue)-\(mode.rawValue).png"))
-            }
-        }
-        try LayoutPreview.render(to: directory)
-        try PopupLayoutPreview.render(to: directory)
-        try OverflowPreview.render(to: directory)
+        try DevelopmentPreviews.render(to: URL(fileURLWithPath: CommandLine.arguments[2]))
     } catch {
         fputs("Preview rendering failed: \(error.localizedDescription)\n", stderr)
         exit(1)
     }
     exit(0)
+    #else
+    fputs("Previews require a development build. Use just previews.\n", stderr)
+    exit(2)
+    #endif
 }
 
 // Development control goes through the running app so visual checks do not

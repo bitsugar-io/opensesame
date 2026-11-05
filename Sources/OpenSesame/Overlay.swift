@@ -2,6 +2,7 @@ import AppKit
 import OpenSesameCore
 
 private struct DrawnHint {
+    let label: String
     let badge: CGRect
     let accent: NSColor
     let text: NSAttributedString
@@ -20,6 +21,8 @@ final class HintCanvas: NSView {
     var textFrames: [CGRect] = []
     private(set) var drawnLabels = Set<String>()
     private(set) var usesLedger = false
+    private(set) var localLabels = Set<String>()
+    private(set) var overflowLabels = Set<String>()
     private var captionFont: NSFont { .systemFont(ofSize: max(12, fontSize - 2), weight: .medium) }
     private var captionHeight: CGFloat { ceil(captionFont.ascender - captionFont.descender + captionFont.leading) + 4 }
     private func shortCaption(_ target: Target) -> String {
@@ -40,9 +43,11 @@ final class HintCanvas: NSView {
     override func draw(_ dirtyRect: NSRect) {
         drawnLabels.removeAll()
         usesLedger = false
+        localLabels.removeAll(); overflowLabels.removeAll()
         drawSectionOutlines()
         if scopedPopup && targets.allSatisfy({ $0.metadata.role == "AXMenuItem" }) { usesLedger = true; drawLedger(); return }
-        var overflow = false
+        var overflowTargets: [Target] = []
+        var overflowPage: LedgerPage?
         var occupied: [CGRect] = []
         var drawings: [DrawnHint] = []
         let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
@@ -153,7 +158,7 @@ final class HintCanvas: NSView {
             } : candidates
             guard let badge = BadgeLayout.place(candidates: sectionCandidates, bounds: bounds,
                                                 occupied: occupied + reservedRows, controls: controlRects, spacing: target.kind == .control ? 3 : 5) else {
-                overflow = true
+                overflowTargets.append(target)
                 continue
             }
             occupied.append(compact[index].flatMap { $0.frame == badge ? $0.reservation : nil } ?? (exterior == badge ? badge.union(badge.offsetBy(dx: 0, dy: -captionHeight)) : badge))
@@ -182,7 +187,7 @@ final class HintCanvas: NSView {
                         connector.move(to: CGPoint(x: rect.minX, y: rect.midY)); connector.line(to: CGPoint(x: badge.maxX, y: rect.midY))
                     }
                 }
-            } else if exterior != badge && target.kind != .window && !inlineTab {
+            } else if exterior != badge && target.kind != .window && !inlineTab && !isSection {
                 connector.move(to: anchor)
                 if abs(anchor.x - endpoint.x) > 0.5 && abs(anchor.y - endpoint.y) > 0.5 {
                     connector.line(to: CGPoint(x: anchor.x, y: endpoint.y))
@@ -194,17 +199,36 @@ final class HintCanvas: NSView {
                 caption = NSAttributedString(string: shortCaption(target), attributes: [.font: captionFont, .foregroundColor: NSColor(rgb: palette.text)])
             }
             drawnLabels.insert(target.label)
-            drawings.append(DrawnHint(badge: badge, accent: accent, text: styled, connector: connector, caption: caption))
+            drawings.append(DrawnHint(label: target.label, badge: badge, accent: accent, text: styled, connector: connector, caption: caption))
         }
-        if overflow {
-            // Do not leave an invisible active code behind. Switch the whole
-            // surface to the existing readable, paged action panel. Codes stay
-            // stable and prefix filtering can bring any action onto the page.
+        if !overflowTargets.isEmpty {
+            // Keep successful local hints. Move only unplaced hints (and any
+            // badge the overflow panel would cover) into the paged panel.
+            var missing = Set(overflowTargets.map(\.label))
+            for _ in 0..<targets.count {
+                overflowTargets = targets.filter { missing.contains($0.label) }
+                let reservations = drawings.filter { !missing.contains($0.label) }.map { drawing in
+                    drawing.caption == nil ? drawing.badge : drawing.badge.union(drawing.badge.offsetBy(dx: 0, dy: -captionHeight))
+                }
+                let page = ledgerGeometry(for: overflowTargets, localized: true, avoid: reservations)
+                overflowPage = page
+                let panel = page.panel
+                let covered = drawings.filter { drawing in
+                    let reservation = drawing.caption == nil ? drawing.badge
+                        : drawing.badge.union(drawing.badge.offsetBy(dx: 0, dy: -captionHeight))
+                    return panel.insetBy(dx: -5, dy: -5).intersects(reservation)
+                }.map(\.label)
+                let before = missing.count
+                missing.formUnion(covered)
+                if missing.count == before { break }
+            }
+            overflowTargets = targets.filter { missing.contains($0.label) }
+            overflowLabels = missing
+            drawings.removeAll { missing.contains($0.label) }
+            drawnLabels.subtract(missing)
             usesLedger = true
-            drawnLabels.removeAll()
-            drawLedger()
-            return
         }
+        localLabels = Set(drawings.map(\.label))
         // Connectors form a background layer. A later target's line must never
         // draw across the code on an earlier badge.
         for drawing in drawings {
@@ -247,6 +271,7 @@ final class HintCanvas: NSView {
             drawing.text.draw(at: CGPoint(x: drawing.caption == nil ? drawing.badge.minX + 8 : drawing.badge.midX - drawing.text.size().width / 2,
                                          y: drawing.badge.midY - drawing.text.size().height / 2))
         }
+        if !overflowTargets.isEmpty { drawLedger(items: overflowTargets, localized: true, pageOverride: overflowPage) }
     }
     private func drawSectionOutlines() {
         for target in targets where target.metadata.role == "OpenSesameSection" && target.label.hasPrefix(prefix) {
@@ -260,24 +285,33 @@ final class HintCanvas: NSView {
             color.withAlphaComponent(0.8).setStroke(); outline.lineWidth = 1.5; outline.stroke()
         }
     }
-    private func drawLedger() {
+    private func ledgerGeometry(for visible: [Target], localized: Bool, avoid: [CGRect] = []) -> LedgerPage {
         let local: (CGRect) -> CGRect = { frame in
             CGRect(x: frame.minX - self.screenFrame.minX, y: self.desktopTop - frame.maxY - self.screenFrame.minY, width: frame.width, height: frame.height)
         }
-        let visible = targets.filter { local($0.frame).intersects(bounds) }
-        guard !visible.isEmpty else { return }
         let controls = visible.map { local($0.frame) }
-        let reported = scopeFrame.map(local) ?? controls.reduce(CGRect.null) { $0.union($1) }
+        let reported = (localized ? nil : scopeFrame.map(local)) ?? controls.reduce(CGRect.null) { $0.union($1) }
         let surface = WidgetLayout.contentSurface(reported: reported, controls: controls, text: textFrames.map(local))
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let codeWidth = ceil((String(repeating: "M", count: visible.map(\.label.count).max() ?? 2) as NSString).size(withAttributes: [.font: font]).width) + 12
+        return LedgerPage(items: visible.filter { $0.label.hasPrefix(prefix) }.count, requestedPage: ledgerPage,
+                          bounds: bounds, surface: surface, fontSize: fontSize, codeWidth: codeWidth, avoid: avoid)
+    }
+    private func drawLedger(items: [Target]? = nil, localized: Bool = false, pageOverride: LedgerPage? = nil) {
+        let visible = (items ?? targets).filter { target in
+            CGRect(x: target.frame.minX - screenFrame.minX, y: desktopTop - target.frame.maxY - screenFrame.minY,
+                   width: target.frame.width, height: target.frame.height).intersects(bounds)
+        }
+        guard !visible.isEmpty else { return }
         let matching = visible.filter { $0.label.hasPrefix(prefix) }
         let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-        let codeWidth = ceil((String(repeating: "M", count: visible.map { $0.label.count }.max() ?? 2) as NSString).size(withAttributes: [.font: font]).width) + 12
-        let page = LedgerPage(items: matching.count, requestedPage: ledgerPage, bounds: bounds, surface: surface, fontSize: fontSize, codeWidth: codeWidth)
+        let codeWidth = ceil((String(repeating: "M", count: visible.map(\.label.count).max() ?? 2) as NSString).size(withAttributes: [.font: font]).width) + 12
+        let page = pageOverride ?? ledgerGeometry(for: visible, localized: localized)
         let shown = Array(matching[page.range])
         let panel = page.panel, rowHeight = page.rowHeight, columnWidth = page.columnWidth
         let perColumn = page.rowsPerColumn
         drawPanel(panel)
-        let heading = targets.contains { $0.metadata.role == "OpenSesameSection" } ? "Choose a section or window" : "Choose an action"
+        let heading = localized ? "More controls" : (targets.contains { $0.metadata.role == "OpenSesameSection" } ? "Choose a section or window" : "Choose an action")
         (heading as NSString).draw(at: CGPoint(x: panel.minX + 12, y: panel.maxY - 25), withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor(rgb: palette.text)])
         for (index, target) in shown.enumerated() {
             drawnLabels.insert(target.label)

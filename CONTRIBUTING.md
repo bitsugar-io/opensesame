@@ -49,8 +49,7 @@ a combination containing Command, Control, or Option. Escape cancels recording.
 Popup codes share a row letter, with enabled controls numbered left to right.
 Numeric widths grow together so a short code cannot activate before a longer
 one has been typed. The configured prefix applies to popup codes too. Sparse
-windows keep direct hints; crowded windows offer sections first. Local-placement
-failure switches to a readable action panel with Tab / Shift+Tab paging. Prefix
+windows keep direct hints; crowded windows offer sections first. Controls that cannot be placed locally move into a readable action panel with Tab / Shift+Tab paging. Prefix
 filtering preserves codes and resets the page. Close and window-size controls
 are excluded.
 
@@ -59,7 +58,9 @@ are excluded.
 Launch the packaged app through the documented workflows. Its bundle registers
 with macOS before requesting Accessibility permission. The panel's permission
 button retries registration and opens Settings. Development builds are ad-hoc
-signed; changed code can require approval again. Set
+signed; changed code can require approval again. The packaged app includes its
+MIT license and dependency notices. Signing identity and license changes are
+part of the packaging cache check. Set
 `OPENSESAME_SIGNING_IDENTITY` to use an installed signing certificate. Building
 does not create certificates or change the keychain.
 
@@ -91,7 +92,7 @@ Resources/                    app metadata, icon, and third-party license notice
 scripts/                      packaging, launch, stop, and workflow checks
 asset/                        generated README artwork and rendered examples
 config.example.toml           example configuration
-.github/                      CI, dependency updates, and contribution template
+.github/                      CI, repository settings, and contribution automation
 ```
 
 ## Code standards
@@ -127,8 +128,8 @@ just test /private/tmp/opensesame-checks
 Tests must not register login items, prompt for permissions, post input events,
 or move focus. Package checks use fake tools. Release-note checks create commits
 and tags only inside a disposable fixture. `just build` refuses to replace a
-changed bundle while OpenSesame is running. Use [MANUAL-TEST.md](MANUAL-TEST.md)
-for the live interaction gate; automated results do not prove cross-app behavior.
+changed bundle while OpenSesame is running. Verify live interactions separately;
+automated results do not prove cross-app behavior.
 
 ### Artwork and rendered examples
 
@@ -137,14 +138,18 @@ just artwork
 just previews /private/tmp/opensesame-checks
 ```
 
-Artwork comes from the native brand target. Previews render native settings and
+Artwork comes from the native brand target. Development-only rendering lives in
+`DevelopmentPreviews.swift`; release builds exclude the synthetic fixtures and
+reject `--render-previews`. Previews render native settings and
 the actual hint canvas without starting the controller, installing input taps,
 or changing the running app. They include local controls, horizontal duration
 strips, menus, and crowded-section/overflow pagination. The renderer checks every
 overflow page for reachability and verifies prefix filtering. Preview failures
 exit with an error instead of generating a crash report.
 
-README examples use synthetic controls; do not substitute private app content.
+The README labels live captures separately from synthetic examples. Crop live
+captures to the relevant UI and exclude private app content; keep full desktop
+originals outside the repository. Rendered examples use synthetic controls.
 The `detail-*.png` files are readable crops of the full layout renders. Keep
 captions explicit about which images are rendered examples versus live captures.
 
@@ -178,6 +183,17 @@ feat(theme): add a color preset
 Describe the problem, resulting behavior, and validation in pull requests. Keep
 rendered-preview results and live interaction checks separate. Follow
 [AI_POLICY.md](AI_POLICY.md) for AI assistance.
+
+## GitHub automation
+
+[.github/](.github) follows HocusFocus's workflow set: Swift tests, Markdown and
+justfile lint, Conventional Commits, dependency review/updates, pull request
+labels, first-interaction greetings, stale handling, and tagged releases.
+[repos.json](.github/repos.json) describes the desired OpenSesame repository
+settings; [labeler.yml](.github/labeler.yml) maps this project's paths to labels.
+The branch-deletion config matches the sibling project too. These files do not
+apply repository settings or install a GitHub App by themselves. GitHub-side
+configuration and workflow results must be verified separately.
 
 ## Releases
 

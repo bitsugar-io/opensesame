@@ -10,7 +10,7 @@ public struct LedgerPage {
     public let rowHeight: CGFloat
     public let columnWidth: CGFloat
 
-    public init(items: Int, requestedPage: Int, bounds: CGRect, surface: CGRect, fontSize: CGFloat, codeWidth: CGFloat) {
+    public init(items: Int, requestedPage: Int, bounds: CGRect, surface: CGRect, fontSize: CGFloat, codeWidth: CGFloat, avoid: [CGRect] = []) {
         rowHeight = ceil(fontSize) + 18
         rowsPerColumn = max(1, Int((bounds.height - 92) / rowHeight))
         let desiredWidth = max(264, codeWidth + 160)
@@ -30,7 +30,27 @@ public struct LedgerPage {
         // Keep the panel the same size on the last page and during page changes.
         let height = min(bounds.height - 24, CGFloat(min(rowsPerColumn, max(1, items))) * rowHeight + 64)
         let x = useLeft ? surface.minX - width - 12 : surface.maxX + 12
-        panel = CGRect(x: min(max(bounds.minX + 12, x), max(bounds.minX + 12, bounds.maxX - width - 12)),
+        let preferred = CGRect(x: min(max(bounds.minX + 12, x), max(bounds.minX + 12, bounds.maxX - width - 12)),
                        y: min(max(bounds.minY + 12, surface.maxY - height), bounds.maxY - height - 12), width: width, height: height)
+        if avoid.isEmpty { panel = preferred; return }
+        var candidates = [preferred]
+        var y = bounds.minY + 12
+        while y + height <= bounds.maxY - 12 {
+            var x = bounds.minX + 12
+            while x + width <= bounds.maxX - 12 {
+                candidates.append(CGRect(x: x, y: y, width: width, height: height))
+                x += 24
+            }
+            y += 24
+        }
+        func collisions(_ frame: CGRect) -> Int { avoid.filter { $0.insetBy(dx: -5, dy: -5).intersects(frame) }.count }
+        // Move the overflow panel before moving any successful local labels.
+        panel = candidates.min { a, b in
+            let ac = collisions(a), bc = collisions(b)
+            if ac != bc { return ac < bc }
+            let ad = abs(a.midX - preferred.midX) + abs(a.midY - preferred.midY)
+            let bd = abs(b.midX - preferred.midX) + abs(b.midY - preferred.midY)
+            return ad < bd
+        } ?? preferred
     }
 }

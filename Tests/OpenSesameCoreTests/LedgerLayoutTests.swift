@@ -42,3 +42,14 @@ import Testing
     #expect(previous.number == first.count - 1)
     #expect(LedgerPage(items: 0, requestedPage: 12, bounds: bounds, surface: popup, fontSize: 16, codeWidth: 60).range.isEmpty)
 }
+
+@Test func overflowPanelMovesBeforeCoveringLocalHintLabels() {
+    let bounds = CGRect(x: 0, y: 0, width: 1200, height: 700)
+    let surface = CGRect(x: 600, y: 250, width: 30, height: 30)
+    let original = LedgerPage(items: 2, requestedPage: 0, bounds: bounds, surface: surface, fontSize: 16, codeWidth: 44)
+    let existingHint = original.panel.insetBy(dx: 10, dy: 10)
+    let relocated = LedgerPage(items: 2, requestedPage: 0, bounds: bounds, surface: surface, fontSize: 16, codeWidth: 44, avoid: [existingHint])
+    #expect(!relocated.panel.intersects(existingHint))
+    #expect(bounds.contains(relocated.panel))
+    #expect(relocated.range == original.range)
+}

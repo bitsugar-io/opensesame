@@ -1,4 +1,29 @@
+# SwiftPM build products and packaged app.
 .build/
-dist/
-.DS_Store
 .swiftpm/
+dist/
+
+# Xcode-generated output and per-user settings.
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcresult/
+*.profraw
+*.profdata
+
+# Local design experiments; shipping artwork remains versioned.
+/asset/explorations/
+
+# Machine-local files and tool overrides.
+.DS_Store
+.claude/worktrees/
+.coverage/
+.env
+.env.*
+!.env.example
+!.env.sample
+.mise.local.toml
+mise.local.toml
+
+# Keep shared tooling configuration despite developer-level ignore rules.
+!/.mise.toml

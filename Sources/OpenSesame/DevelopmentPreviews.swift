@@ -1,10 +1,51 @@
+#if DEBUG
 import AppKit
+import SwiftUI
 import ApplicationServices
 import OpenSesameCore
 import OpenSesameBrand
 
+// Development-only fixtures use the real views without starting the controller.
+// Release builds contain neither the synthetic UI nor its rendering code.
+enum DevelopmentPreviews {
+    static func render(to directory: URL) throws {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let model = Controller()
+        model.trusted = true
+        for page in DashboardPage.allCases {
+            let view = NSHostingView(rootView: Dashboard(model: model, page: page))
+            view.appearance = NSAppearance(named: .darkAqua)
+            view.frame = CGRect(origin: .zero, size: view.fittingSize)
+            view.layoutSubtreeIfNeeded()
+            guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("settings-\(page.rawValue.lowercased()).png"))
+        }
+        for theme in AppTheme.allCases {
+            model.theme = theme
+            for mode in [AppearanceMode.dark, .light] {
+                model.appearanceMode = mode
+                NSApp.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
+                let view = NSHostingView(rootView: Dashboard(model: model, page: .style))
+                view.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
+                view.frame = CGRect(origin: .zero, size: view.fittingSize)
+                view.layoutSubtreeIfNeeded()
+                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("theme-\(theme.rawValue)-\(mode.rawValue).png"))
+            }
+        }
+        try PopupLayoutPreview.render(to: directory)
+        try OverflowPreview.render(to: directory)
+        try OverflowPreview.renderMixed(to: directory)
+    }
+}
+
 /// Neutral fixtures based on the reported widget geometry; no live app content.
-final class PopupLayoutPreview: NSView {
+private final class PopupLayoutPreview: NSView {
     struct Item { let title: String, role: String; let frame: CGRect }
     let items: [Item]
     let popup: CGRect
@@ -89,3 +130,66 @@ final class PopupLayoutPreview: NSView {
         }
     }
 }
+
+/// Exhaustively checks real renderer pagination without starting the app,
+/// installing input hooks, or interacting with live Accessibility controls.
+private enum OverflowPreview {
+    static func renderMixed(to directory: URL) throws {
+        let canvas = HintCanvas(frame: CGRect(x: 0, y: 0, width: 1000, height: 600))
+        canvas.screenFrame = canvas.bounds; canvas.desktopTop = canvas.bounds.height
+        func target(_ code: String, _ frame: CGRect, _ kind: TargetKind, _ role: String) -> Target {
+            Target(element: AXUIElementCreateApplication(0), frame: frame, label: code, kind: kind,
+                action: "AXPress", clicksMenuBarExtra: false,
+                metadata: TargetMetadata(role: role, subrole: "", title: "Example", description: "", owner: 0, bundleID: "com.mitchellh.ghostty"))
+        }
+        canvas.targets = [target("ss", CGRect(x: 40, y: 0, width: 30, height: 24), .menu, "AXMenuBarItem"),
+            target("sa", CGRect(x: 300, y: 70, width: 180, height: 28), .tab, "AXTab"),
+            target("sd", CGRect(x: 900, y: 380, width: 8, height: 8), .window, "AXWindow")]
+        guard let bitmap = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) else { throw CocoaError(.coderInvalidValue) }
+        canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+        guard canvas.localLabels == ["ss", "sa"], canvas.overflowLabels == ["sd"],
+              canvas.drawnLabels == ["ss", "sa", "sd"] else {
+            fputs("Mixed overflow must preserve local menu and tab markers.\n", stderr)
+            throw CocoaError(.coderInvalidValue)
+        }
+        try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("layout-mixed-overflow.png"))
+    }
+
+    static func render(to directory: URL) throws {
+        for sections in [false, true] {
+            let canvas = HintCanvas(frame: CGRect(x: 0, y: 0, width: 520, height: 320))
+            canvas.screenFrame = canvas.bounds; canvas.desktopTop = canvas.bounds.height
+            canvas.fontSize = 22
+            let frame = CGRect(x: 60, y: 40, width: 400, height: 210)
+            canvas.scopeFrame = frame
+            // No local gutters: force deliberate overflow, not missing codes.
+            canvas.textFrames = [canvas.bounds]
+            let labels = Hints.labels(count: 45, configuration: try HintConfiguration(minimumLength: 3, alphabet: "sadfjklewcmpgh", prefix: "s"))
+            canvas.targets = labels.enumerated().map { index, label in
+                Target(element: AXUIElementCreateApplication(0), frame: frame, label: label,
+                    kind: .control, action: "AXPress", clicksMenuBarExtra: false,
+                    metadata: TargetMetadata(role: sections ? "OpenSesameSection" : "AXButton", subrole: "",
+                        title: sections ? "Section \(index + 1)" : "Action \(index + 1)", description: "", owner: 0, bundleID: "preview"))
+            }
+            var reached = Set<String>()
+            for page in 0..<45 {
+                canvas.ledgerPage = page
+                guard let bitmap = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) else { throw CocoaError(.coderInvalidValue) }
+                canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+                guard canvas.usesLedger, !canvas.drawnLabels.isEmpty else { throw CocoaError(.coderInvalidValue) }
+                reached.formUnion(canvas.drawnLabels)
+                if page == 0 {
+                    try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent(sections ? "layout-section-overflow.png" : "layout-overflow.png"))
+                }
+                if reached == Set(labels) { break }
+            }
+            guard reached == Set(labels) else { throw CocoaError(.coderInvalidValue) }
+            canvas.prefix = labels.last!
+            guard let bitmap = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) else { throw CocoaError(.coderInvalidValue) }
+            canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+            guard canvas.drawnLabels == [labels.last!] else { throw CocoaError(.coderInvalidValue) }
+        }
+    }
+}
+
+#endif
