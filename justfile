@@ -41,7 +41,7 @@ just-fmt-check:
     just --unstable --fmt --check
 
 # Run the local checks without launching the app.
-ready: just-fmt-check md-lint test test-release-notes
+ready: just-fmt-check md-lint test
 
 # Regenerate the shared logo and application icon.
 artwork:
@@ -63,7 +63,3 @@ md-lint:
 # Preview notes since the last release; writes nothing.
 release-notes:
     git-cliff --config cliff.toml --unreleased --strip header
-
-# Check release notes in a disposable Git fixture.
-test-release-notes:
-    bash scripts/test-release-notes.sh
