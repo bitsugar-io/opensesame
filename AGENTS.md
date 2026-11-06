@@ -36,6 +36,9 @@ replace it unless the user asks, even where CONTRIBUTING.md says to run
 approval again, and only the user can give it. Pass a scratch path, as in
 `just test /private/tmp/opensesame-checks`, so your build does not touch theirs.
 
+Spawn subagents only when the user asks. Parallel SwiftPM runs contend for the
+same `.build` lock.
+
 ## Reporting what you checked
 
 Say what changed, which checks ran, and what you could not check. Report
