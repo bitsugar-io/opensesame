@@ -13,7 +13,7 @@ swift build -c "$build_configuration" --disable-sandbox --cache-path "$PWD/.buil
 binary_dir="$(swift build -c "$build_configuration" --show-bin-path --disable-sandbox --cache-path "$PWD/.build/cache")"
 app_dir="$PWD/dist/OpenSesame.app"
 # Stamp source identity into the bundle so diagnostics identify the running code.
-source_files=("${(@f)$(rg --files Sources -g '*.swift' | sort)}" Package.swift Resources/Info.plist Resources/OpenSesame.icns)
+source_files=(Sources/**/*.swift(.N) Package.swift Resources/Info.plist Resources/OpenSesame.icns)
 build_fingerprint="$(shasum -a 256 "${source_files[@]}" | shasum -a 256 | cut -c1-12)"
 staged_plist="$PWD/.build/OpenSesame-Info.plist"
 cp Resources/Info.plist "$staged_plist"
