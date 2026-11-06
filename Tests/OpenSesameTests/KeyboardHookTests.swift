@@ -9,7 +9,7 @@ struct KeyboardHookTests {
     @Test func callbackReturnsWhileTheUIThreadIsWaitingAndMouseReleasesCapture() throws {
         _ = NSApplication.shared
         var delivered = 0
-        let hook = KeyboardHook(handle: { _, _ in delivered += 1 }, cancel: { _ in }, installed: { _ in }, disabled: {})
+        let hook = KeyboardHook(handle: { _, _ in delivered += 1 }, cancel: { _ in }, installed: { _ in }, disabled: {}, now: { 0 })
         hook.update(.init(generation: UUID(), shortcut: Shortcut(), enabled: true, recording: false, active: true, pending: false, labels: ["am"]))
         let key = try #require(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true))
         var character: UniChar = 97
@@ -41,7 +41,7 @@ private final class Outcome: @unchecked Sendable {
 @MainActor
 struct KeyboardHookEmptyPayloadTests {
     @Test func emptyUnicodePayloadUsesCachedLayoutWithoutCallingAppKitOnInputThread() throws {
-        let hook = KeyboardHook(handle: { _, _ in }, cancel: { _ in }, installed: { _ in }, disabled: {})
+        let hook = KeyboardHook(handle: { _, _ in }, cancel: { _ in }, installed: { _ in }, disabled: {}, now: { 0 })
         hook.update(.init(generation: UUID(), shortcut: Shortcut(), enabled: true, recording: false, active: true, pending: false, labels: ["am"], keyCharacters: [0: "a"]))
         let key = try #require(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true))
         var empty: UniChar = 0
