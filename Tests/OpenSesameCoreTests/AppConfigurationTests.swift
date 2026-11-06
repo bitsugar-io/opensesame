@@ -15,6 +15,13 @@ import Testing
     #expect(config.hints.minimumLength == 2)
     #expect(config.apps.mode == .except)
 }
+@Test func tomlParsesFoundationBackedSource() throws {
+    // macOS 15 file reads can return lazily bridged strings, and TOMLDecoder traps on them.
+    let units = Array("# Bridged — longer than a small string\ntheme = \"dracula\"\n".utf16)
+    let source = NSString(characters: units, length: units.count) as String
+    #expect(source.utf8.withContiguousStorageIfAvailable { _ in true } == nil)
+    #expect(try AppConfiguration.parse(source).theme == .dracula)
+}
 @Test func tomlRejectsTyposInvalidSizesAndAmbiguousLetters() {
     for source in ["[hints]\nszie = 16", "[hints]\nsize = 9", "[hints]\nsize = 16.5", "[hints]\nalphabet = 'aa'", "[hints]\nminimum_length = 4", "[apps]\nmode = 'all'", "[apps]\nlist = ['']", "[wrong]\na = 1"] {
         #expect(throws: (any Error).self) { try AppConfiguration.parse(source) }

@@ -52,6 +52,9 @@ public struct AppConfiguration: Equatable, Decodable {
         apps = try c.decodeIfPresent(AppSettings.self, forKey: .apps) ?? AppSettings()
     }
     public static func parse(_ source: String) throws -> Self {
+        // TOMLDecoder traps on bridged strings that lack contiguous UTF-8 storage.
+        var source = source
+        source.makeContiguousUTF8()
         var config = try TOMLDecoder().decode(Self.self, from: source)
         guard config.hints.size.isFinite, (10...22).contains(config.hints.size), config.hints.size.rounded() == config.hints.size else {
             throw ConfigurationError.invalid("hints.size must be a whole number from 10 to 22.")
