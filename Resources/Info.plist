@@ -13,4 +13,5 @@
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSAccessibilityUsageDescription</key><string>Find and activate controls using keyboard hints.</string>
+<key>NSAppleEventsUsageDescription</key><string>Read Chrome tab addresses to show website icons from its local cache. OpenSesame does not save these addresses or change your tabs.</string>
 </dict></plist>

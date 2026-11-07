@@ -17,7 +17,7 @@ import Testing
     #expect(Set([identity(), identity(name: "Close", kind: .close), identity(pid: 2), identity(action: "AXShowMenu")]).count == 4)
 }
 
-@Test func selectingAWindowEndsHintsLikeSelectingATab() {
+@Test func windowSelectionUsesItsOwnRefreshInsteadOfPopupFollowing() {
     #expect(!TargetKind.window.followsOpenedSurface)
     #expect(TargetKind.window.marker != TargetKind.tab.marker)
     #expect(!TargetExclusion.excludes(role: "AXWindow", subrole: "AXStandardWindow", title: "Shell", description: "Switch window", kind: .window))

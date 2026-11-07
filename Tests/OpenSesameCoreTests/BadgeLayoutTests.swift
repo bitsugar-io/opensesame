@@ -2,6 +2,18 @@ import CoreGraphics
 import Testing
 @testable import OpenSesameCore
 
+@Test func tabCodesStayInsideTabsAndOverflowWhenTheConfiguredGlyphsDoNotFit() throws {
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 600)
+    let tab = CGRect(x: 140, y: 90, width: 240, height: 28)
+    let marker = try #require(BadgeLayout.insideTab(control: tab, badge: CGSize(width: 44, height: 26), textHeight: 20,
+        bounds: bounds, occupied: []))
+    #expect(tab.contains(marker))
+    #expect(marker.midY == tab.midY)
+    #expect(BadgeLayout.insideTab(control: tab, badge: CGSize(width: 44, height: 34), textHeight: 29, bounds: bounds, occupied: []) == nil)
+    #expect(BadgeLayout.insideTab(control: CGRect(x: 140, y: 90, width: 30, height: 28), badge: CGSize(width: 44, height: 26),
+        textHeight: 20, bounds: bounds, occupied: []) == nil)
+}
+
 @Test func crowdedBadgesKeepReadableSeparation() {
     let bounds = CGRect(x: 0, y: 0, width: 400, height: 200)
     let first = CGRect(x: 20, y: 100, width: 35, height: 24)
@@ -9,6 +21,20 @@ import Testing
     let clear = first.offsetBy(dx: 0, dy: -32)
     #expect(BadgeLayout.place(candidates: [touching, clear], bounds: bounds, occupied: [first], controls: []) == clear)
     #expect(BadgeLayout.place(candidates: [first], bounds: bounds, occupied: [first], controls: []) == nil)
+}
+
+@Test func inlineTabHintsUseTheGapBetweenATitleAndItsCloseButton() throws {
+    let bounds = CGRect(x: 0, y: 0, width: 500, height: 200)
+    let tab = CGRect(x: 100, y: 80, width: 240, height: 32)
+    let title = CGRect(x: 112, y: 88, width: 132, height: 16)
+    let close = CGRect(x: 312, y: 86, width: 20, height: 20)
+    let marker = try #require(BadgeLayout.insideTab(control: tab, badge: CGSize(width: 44, height: 26),
+        textHeight: 20, bounds: bounds, occupied: [title, close]))
+    #expect(tab.contains(marker))
+    #expect(marker.minX > title.maxX)
+    #expect(marker.maxX < close.minX)
+    #expect(BadgeLayout.insideTab(control: tab, badge: CGSize(width: 44, height: 26), textHeight: 20,
+        bounds: bounds, occupied: [tab]) == nil)
 }
 @Test func placementPrefersUncoveredControlsAndStaysOnScreen() {
     let bounds = CGRect(x: 0, y: 0, width: 400, height: 200)
@@ -78,41 +104,4 @@ import Testing
         #expect(placed != nil)
         if let placed { #expect(bounds.contains(placed)); occupied.append(placed) }
     }
-}
-
-@Test func inlineTabBadgesStayInsideTheTabNearItsLeftEdge() {
-    let tab = CGRect(x: 220, y: 300, width: 360, height: 24)
-    let badge = BadgeLayout.inlineTab(control: tab, badge: CGSize(width: 40, height: 30))
-    #expect(badge != nil)
-    #expect(tab.contains(badge!))
-    #expect(badge!.minX == tab.minX + 8)
-    #expect(badge!.midY == tab.midY)
-    // A narrow new-tab button cannot contain an unclipped two-letter code.
-    #expect(BadgeLayout.inlineTab(control: CGRect(x: 0, y: 0, width: 30, height: 30), badge: CGSize(width: 40, height: 30)) == nil)
-}
-
-@Test func overlappingWindowSelectorsGetSeparateTitleBarPositions() {
-    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
-    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
-    var occupied: [CGRect] = []
-    for offset: CGFloat in [0, 0, 20] {
-        let frame = window.offsetBy(dx: offset, dy: 0)
-        let candidates = BadgeLayout.windowTitle(control: frame, badge: CGSize(width: 40, height: 30))
-        let placed = BadgeLayout.place(candidates: candidates, bounds: bounds, occupied: occupied, controls: [])
-        #expect(placed != nil)
-        if let placed { #expect(frame.contains(placed)); occupied.append(placed) }
-    }
-    #expect(Set(occupied.map { $0.minX }).count == 3)
-}
-
-@Test func goldWindowSelectorDoesNotHideAnInlineTabHint() {
-    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
-    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
-    let tab = CGRect(x: 400, y: 576, width: 300, height: 24)
-    let size = CGSize(width: 40, height: 30)
-    let gold = BadgeLayout.place(candidates: BadgeLayout.windowTitle(control: window, badge: size), bounds: bounds, occupied: [], controls: [])!
-    let inline = BadgeLayout.place(candidates: BadgeLayout.inlineTabCandidates(control: tab, badge: size), bounds: bounds, occupied: [gold], controls: [])
-    #expect(inline != nil)
-    #expect(tab.contains(inline!))
-    #expect(!gold.insetBy(dx: -5, dy: -5).intersects(inline!))
 }

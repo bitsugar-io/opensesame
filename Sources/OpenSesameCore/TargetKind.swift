@@ -1,7 +1,7 @@
 import Foundation
 
 public enum TargetKind: String, Hashable {
-    case control, tab, close, menu, window
+    case control, tab, close, menu, window, desktop
     public var followsOpenedSurface: Bool { self != .tab && self != .close && self != .window }
     public var marker: String {
         switch self {
@@ -10,10 +10,12 @@ public enum TargetKind: String, Hashable {
         case .close: return "×"
         case .menu: return "›"
         case .window: return "▣"
+        case .desktop: return ""
         }
     }
     public static func classify(role: String, subrole: String, parentRole: String, description: String) -> Self {
         let name = description.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if role == "AXTabGroup", parentRole == "AXTabGroup" { return .tab }
         if subrole != "AXCloseButton", ["AXTab", "AXTabButton"].contains(role) || (role == "AXRadioButton" && parentRole == "AXTabGroup") { return .tab }
         if subrole == "AXCloseButton" || ["close", "close tab", "close window", "close button", "close tab button"].contains(name) { return .close }
         if ["AXTab", "AXTabButton"].contains(role) || subrole == "AXTabButton" || (parentRole == "AXTabGroup" && ["AXRadioButton", "AXButton"].contains(role)) { return .tab }

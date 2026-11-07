@@ -6,9 +6,14 @@ struct TargetMetadata {
     let role: String, subrole: String, title: String, description: String
     let owner: pid_t
     let bundleID: String
+    var visibleFrames: [CGRect]? = nil
+    var windowID: UInt32? = nil
+    var identifier = ""
+    var isDisclosure = false
+    var iconData: Data? = nil
 }
 struct DiscoveryResult {
-    let targets: [Target]
+    var targets: [Target]
     let scopeFrame: CGRect?
     let placementFrame: CGRect?
     let rootRoles: [String]
@@ -20,6 +25,13 @@ struct DiscoveryResult {
     let accessibilityPreparation: [String: Int]
     let rootProbes: [[String: Any]]
     let rootResolution: String
+    var window: DiscoveredWindow? = nil
+}
+struct DiscoveredWindow {
+    let element: AXUIElement
+    let frame: CGRect
+    let title: String
+    let identifier: String
 }
 struct Target {
     let element: AXUIElement
@@ -28,7 +40,8 @@ struct Target {
     let kind: TargetKind
     let action: String
     let clicksMenuBarExtra: Bool
-    let metadata: TargetMetadata
+    var metadata: TargetMetadata
+    var sectionMemberFrames: [CGRect] = []
 }
 func attribute(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
     var result: CFTypeRef?
@@ -44,17 +57,33 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     return CGRect(origin: point, size: size)
 }
 enum Discovery {
-    static func scan(pid: pid_t, extras: [pid_t], screens: [CGRect], surface: Surface? = nil, openedFrom: AXUIElement? = nil, configuration: HintConfiguration = .standard, accessibilityAttempt: Int = 0, preparation: [String: Int] = [:], popupOnly: Bool = false) -> DiscoveryResult {
+    static func closedSurfaceRoots(app: AXUIElement, popupOnly: Bool, menuBarFallback: Bool,
+                                   read: (AXUIElement, String) -> CFTypeRef? = attribute) -> (window: AXUIElement?, menu: AXUIElement?) {
+        guard !popupOnly || menuBarFallback else { return (nil, nil) }
+        func element(_ key: String) -> AXUIElement? {
+            guard let value = read(app, key), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+            return value as! AXUIElement
+        }
+        return (popupOnly ? nil : element(kAXFocusedWindowAttribute), element(kAXMenuBarAttribute))
+    }
+    static func primaryAction(in actions: [String]) -> String? {
+        AccessibilityActionPolicy.primary(role: "", kind: .control, advertised: actions)
+    }
+    static func scan(pid: pid_t, extras: [pid_t], screens: [CGRect], surface: Surface? = nil, openedFrom: AXUIElement? = nil, configuration: HintConfiguration = .standard, accessibilityAttempt: Int = 0, preparation: [String: Int] = [:], popupOnly: Bool = false, menuBarFallback: Bool = false, windowOwners: Set<pid_t>? = nil, requestedWindow: AXUIElement? = nil) -> DiscoveryResult {
         let started = Date()
         let deadline = started.addingTimeInterval(4)
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.08)
         let isSpotify = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.spotify.client"
         var preparation = preparation
+        if accessibilityAttempt == 0 {
+            preparation.merge(AccessibilityPreparation.enableTree(app)) { _, fresh in fresh }
+        }
         // Chromium initializes its renderer tree asynchronously. Request it before
         // traversal, and preserve the actual AX result codes for diagnostics.
         if isSpotify, accessibilityAttempt == 0 {
             for key in ["AXManualAccessibility", "AXEnhancedUserInterface"] {
+                if preparation[key] != nil { continue }
                 preparation[key] = Int(AXUIElementSetAttributeValue(app, key as CFString, kCFBooleanTrue).rawValue)
             }
         }
@@ -70,7 +99,14 @@ enum Discovery {
         var pendingExtras: [pid_t] = []
         var scopeFrame = surface?.frame
         var windowFrame: CGRect?
-        if let surface {
+        var currentWindow: AXUIElement?
+        if let requestedWindow {
+            // Recall scans this exact window, not whichever app happens to be frontmost.
+            currentWindow = requestedWindow
+            windowFrame = elementFrame(requestedWindow)
+            roots = windowFrame == nil ? [] : [(requestedWindow, false)]
+            rootResolution = "saved-window"
+        } else if let surface {
             let popupApp = AXUIElementCreateApplication(surface.pid)
             AXUIElementSetMessagingTimeout(popupApp, 0.08)
             let windows = rootAttribute(popupApp, kAXWindowsAttribute) as? [AXUIElement] ?? []
@@ -104,15 +140,27 @@ enum Discovery {
                     roots = [(popup, false)]
                     scopeFrame = elementFrame(popup)
                     rootResolution = "shown-popup-in-window"
-                } else if !popupOnly {
-                    if let window = rootAttribute(app, kAXFocusedWindowAttribute) {
-                        let element = window as! AXUIElement
+                } else if !popupOnly || menuBarFallback {
+                    let fallback = closedSurfaceRoots(app: app, popupOnly: popupOnly, menuBarFallback: menuBarFallback, read: rootAttribute)
+                    if let element = fallback.window {
+                        currentWindow = element
                         windowFrame = elementFrame(element)
                         roots.append((element, false))
                     }
-                    if let menu = rootAttribute(app, kAXMenuBarAttribute) { roots.append((menu as! AXUIElement, false)) }
+                    if let menu = fallback.menu { roots.append((menu, false)) }
                     pendingExtras = extras
+                    if popupOnly { rootResolution = "menu-bar-refresh" }
                 }
+            }
+        }
+        var rootOwners = Set([pid])
+        for (root, _) in roots {
+            var rootPID: pid_t = 0
+            guard AXUIElementGetPid(root, &rootPID) == .success, rootOwners.insert(rootPID).inserted else { continue }
+            if accessibilityAttempt == 0 {
+                let provider = AXUIElementCreateApplication(rootPID)
+                AXUIElementSetMessagingTimeout(provider, 0.08)
+                for (key, result) in AccessibilityPreparation.enableTree(provider) { preparation["\(rootPID):\(key)"] = result }
             }
         }
         var stack = roots.reversed().map { ($0.0, $0.1, false, attribute($0.0, kAXRoleAttribute) as? String == kAXWindowRole, false) }, visited: [CFHashCode: [AXUIElement]] = [:], found: [(AXUIElement, CGRect, Bool, String, TargetKind, TargetMetadata)] = []
@@ -124,34 +172,16 @@ enum Discovery {
         var textFrames: [CGRect] = []
         var nodes = 0
         var bundleIDs: [pid_t: String] = [:]
-        // Window switching belongs only to the initial app-wide session. Popup
-        // navigation must stay scoped to the surface that was opened.
-        if scopeFrame == nil, windowFrame != nil {
-            let visible = visibleSurfaces().filter { $0.pid == pid && $0.layer == 0 }
-            let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
-            let selectable = windows.prefix(32).compactMap { window -> (AXUIElement, CGRect)? in
-                guard Date() < deadline, attribute(window, kAXMinimizedAttribute) as? Bool != true,
-                      attribute(window, kAXHiddenAttribute) as? Bool != true,
-                      let frame = elementFrame(window) else { return nil }
-                let subrole = attribute(window, kAXSubroleAttribute) as? String ?? ""
-                guard subrole.isEmpty || subrole == kAXStandardWindowSubrole else { return nil }
-                return (window, frame)
-            }
-            let matched = WindowMatching.visibleIndices(windows: selectable.map { $0.1 }, surfaces: visible.map { $0.frame })
-            if matched.count > 1 {
-                for index in matched {
-                    guard Date() < deadline else { break }
-                    let (window, frame) = selectable[index]
-                    var actions: CFArray?
-                    AXUIElementCopyActionNames(window, &actions)
-                    guard (actions as? [String] ?? []).contains(kAXRaiseAction) else { continue }
-                    let title = attribute(window, kAXTitleAttribute) as? String ?? ""
-                    found.append((window, frame, false, kAXRaiseAction, .window,
-                                  TargetMetadata(role: kAXWindowRole, subrole: kAXStandardWindowSubrole,
-                                                 title: title, description: "Switch window", owner: pid,
-                                                 bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "")))
-                }
-            }
+        // Window selectors cover every allowed app on the current desktop;
+        // control traversal remains scoped to the focused window or popup.
+        if scopeFrame == nil, rootResolution == "active-window", !popupOnly {
+            let surfaces = visibleSurfaces()
+            let windows = WindowDiscovery.targets(surfaces: surfaces, owners: windowOwners ?? [pid],
+                screens: screens, deadline: deadline, currentWindow: currentWindow)
+            found += windows.map { ($0.element, $0.frame, false, $0.action, $0.kind, $0.metadata) }
+            let desktop = DesktopDiscovery.targets(owners: windowOwners ?? [pid], screens: screens,
+                occluders: surfaces.filter { $0.layer == 0 }.map(\.frame), deadline: min(deadline, Date().addingTimeInterval(0.4)))
+            found += desktop.map { ($0.element, $0.frame, false, $0.action, $0.kind, $0.metadata) }
         }
         while nodes < 6000, found.count < 2000, Date() < deadline {
             // Discover window content before spending the scan budget querying
@@ -189,21 +219,8 @@ enum Discovery {
             if excludedChrome.contains(where: { CFEqual($0, element) }) { continue }
             if role == kAXButtonRole, let frame = elementFrame(element), chromeFrames.contains(where: { TargetGeometry.isStable(previous: $0, current: frame) }) { continue }
             if MenuTraversal.descendsInto(role: role) || role == kAXMenuItemRole {
-                // Visible children exclude alternate/hidden menu entries where
-                // the provider supports that attribute. Empty means no rows.
-                let visible = role == kAXMenuRole ? attribute(element, kAXVisibleChildrenAttribute) as? [AXUIElement] : nil
-                var children = visible ?? (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? [])
-                // Some Chromium containers publish their descendants through
-                // navigation order or contents rather than AXChildren.
-                if isSpotify, children.isEmpty, visible == nil {
-                    for key in ["AXChildrenInNavigationOrder", kAXContentsAttribute] {
-                        if let alternative = attribute(element, key) as? [AXUIElement], !alternative.isEmpty {
-                            children = alternative
-                            break
-                        }
-                    }
-                }
-                if isSpotify, children.isEmpty, [kAXGroupRole, kAXWindowRole, "AXWebArea"].contains(role), rejected.count < 512 {
+                let children = AccessibilityTraversal.children(of: element, role: role)
+                if children.isEmpty, [kAXGroupRole, kAXWindowRole, "AXWebArea"].contains(role), rejected.count < 512 {
                     var supported: CFArray?
                     AXUIElementCopyAttributeNames(element, &supported)
                     rejected.append(["role": role, "reason": "empty-accessibility-container", "attributes": supported as? [String] ?? []])
@@ -227,6 +244,7 @@ enum Discovery {
             if insideWindow, let windowFrame, !TargetGeometry.isVisible(frame: frame, viewport: windowFrame) { continue }
             if let scopeFrame, !scopeFrame.insetBy(dx: -2, dy: -2).contains(CGPoint(x: frame.midX, y: frame.midY)) { continue }
             if [kAXStaticTextRole, kAXImageRole].contains(role) { textFrames.append(frame) }
+            if found.contains(where: { $0.4 == .desktop && CFEqual($0.0, element) }) { continue }
             guard WebTargetPolicy.allows(role: role, insideWebContent: insideWebContent) else {
                 if rejected.count < 512 { rejected.append(["role": role, "reason": "structural-web-element"]) }
                 continue
@@ -235,7 +253,10 @@ enum Discovery {
             AXUIElementCopyActionNames(element, &actions)
             let names = actions as? [String] ?? []
             let enabled = attribute(element, kAXEnabledAttribute) as? Bool != false
-            guard enabled, let action = [kAXPressAction, kAXShowMenuAction].first(where: { names.contains($0) }) else {
+            // Passive text/images need no title/ancestry/disclosure round trips.
+            // Preserve the scan budget for actionable descendants lower down.
+            let candidate = primaryAction(in: names) != nil || AccessibilityActionPolicy.mayDisclose(role: role)
+            guard enabled, candidate else {
                 if rejected.count < 512 {
                     rejected.append(["role": role, "actions": names, "reason": enabled ? "no-supported-action" : "disabled",
                                      "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]])
@@ -251,11 +272,16 @@ enum Discovery {
                 parentRole = attribute(parent as! AXUIElement, kAXRoleAttribute) as? String ?? ""
             } else { parentRole = "" }
             let kind = TargetKind.classify(role: role, subrole: subrole, parentRole: parentRole, description: description)
+            guard let plan = AccessibilityActions.plan(element, role: role, kind: kind, advertised: names) else {
+                if rejected.count < 512 { rejected.append(["role": role, "actions": names, "reason": "no-supported-primary-action"]) }
+                continue
+            }
+            let action = plan.action
             var elementPID: pid_t = 0
             AXUIElementGetPid(element, &elementPID)
             if bundleIDs[elementPID] == nil { bundleIDs[elementPID] = NSRunningApplication(processIdentifier: elementPID)?.bundleIdentifier ?? "" }
             guard !TargetExclusion.excludes(role: role, subrole: subrole, title: title, description: description, kind: kind,
-                                           bundleID: bundleIDs[elementPID] ?? "") else { continue }
+                                           bundleID: bundleIDs[elementPID] ?? "", action: action) else { continue }
             if ["AXButton", "AXCell"].contains(role) {
                 let name = title.isEmpty ? description : title
                 if let duplicate = found.firstIndex(where: { existing in
@@ -280,17 +306,23 @@ enum Discovery {
                                           x: Double(frame.minX), y: Double(frame.minY), width: Double(frame.width), height: Double(frame.height))
             guard identities.insert(identity).inserted else { continue }
             found.append((element, frame, isExtra, action, kind,
-                          TargetMetadata(role: role, subrole: subrole, title: title, description: description, owner: elementPID, bundleID: bundleIDs[elementPID] ?? "")))
+                          TargetMetadata(role: role, subrole: subrole, title: title, description: description, owner: elementPID, bundleID: bundleIDs[elementPID] ?? "", identifier: identifier, isDisclosure: plan.isDisclosure)))
         }
-        found.sort { $0.1.minY != $1.1.minY ? $0.1.minY < $1.1.minY : $0.1.minX < $1.1.minX }
+        found.sort {
+            if ($0.4 == .window) != ($1.4 == .window) { return $0.4 == .window }
+            if $0.4 == .window, $0.1.midX != $1.1.midX { return $0.1.midX < $1.1.midX }
+            return $0.1.minY != $1.1.minY ? $0.1.minY < $1.1.minY : $0.1.minX < $1.1.minX
+        }
         let missingSpotifyContent = isSpotify && !found.contains(where: { $0.5.owner == pid && $0.5.role != kAXMenuBarItemRole && $0.4 != .window })
+        let awaitingPreparedTree = preparation.contains { $0.key.hasSuffix("AXEnhancedUserInterface") && $0.value == Int(AXError.success.rawValue) }
+            && !found.contains(where: { rootOwners.contains($0.5.owner) && $0.5.role != kAXMenuBarItemRole && $0.4 != .window })
         let transientRootFailure = roots.isEmpty && rootProbes.contains { ($0["error"] as? Int32) == AXError.cannotComplete.rawValue }
-        if (missingSpotifyContent || transientRootFailure), accessibilityAttempt < 2,
+        if (missingSpotifyContent || awaitingPreparedTree || transientRootFailure), accessibilityAttempt < 2,
            Date().timeIntervalSince(started) < 1 {
             // Only the discovery worker waits; the keyboard event tap stays free.
             Thread.sleep(forTimeInterval: 0.2)
             return scan(pid: pid, extras: extras, screens: screens, surface: surface, openedFrom: openedFrom,
-                        configuration: configuration, accessibilityAttempt: accessibilityAttempt + 1, preparation: preparation, popupOnly: popupOnly)
+                        configuration: configuration, accessibilityAttempt: accessibilityAttempt + 1, preparation: preparation, popupOnly: popupOnly, menuBarFallback: menuBarFallback, windowOwners: windowOwners, requestedWindow: requestedWindow)
         }
         preparation["attempts"] = accessibilityAttempt + 1
         let labels = scopeFrame == nil ? Hints.labels(count: found.count, configuration: configuration)
@@ -302,15 +334,20 @@ enum Discovery {
         let rootRoles = roots.map { attribute($0.0, kAXRoleAttribute) as? String ?? "unknown" }
         return DiscoveryResult(targets: targets, scopeFrame: scopeFrame, placementFrame: scopeFrame ?? windowFrame, rootRoles: rootRoles,
                                rejected: rejected, visitedNodes: nodes, reachedLimit: nodes >= 6000 || found.count >= 2000 || Date() >= deadline,
-                               elapsed: Date().timeIntervalSince(started), textFrames: textFrames, accessibilityPreparation: preparation, rootProbes: rootProbes, rootResolution: rootResolution)
+                               elapsed: Date().timeIntervalSince(started), textFrames: textFrames, accessibilityPreparation: preparation, rootProbes: rootProbes, rootResolution: rootResolution,
+                               window: currentWindow.flatMap { window in windowFrame.map {
+                                   DiscoveredWindow(element: window, frame: $0, title: attribute(window, kAXTitleAttribute) as? String ?? "",
+                                                    identifier: attribute(window, kAXIdentifierAttribute) as? String ?? "")
+                               } })
     }
 }
 
 
-private func isAncestor(_ ancestor: AXUIElement, of element: AXUIElement) -> Bool {
+func isAncestor(_ ancestor: AXUIElement, of element: AXUIElement, maximumDepth: Int = 6,
+                read: (AXUIElement, String) -> CFTypeRef? = attribute) -> Bool {
     var current = element
-    for _ in 0..<6 {
-        guard let parent = attribute(current, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { return false }
+    for _ in 0..<maximumDepth {
+        guard let parent = read(current, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { return false }
         current = parent as! AXUIElement
         if CFEqual(current, ancestor) { return true }
     }
@@ -319,7 +356,7 @@ private func isAncestor(_ ancestor: AXUIElement, of element: AXUIElement) -> Boo
 
 // Status-item utilities can expose AXPress yet ignore it. Click these explicit
 // targets once, rather than trying AXPress first and accidentally toggling twice.
-func clickMenuBarExtra(at point: CGPoint) -> Bool {
+func clickPrimaryTarget(at point: CGPoint) -> Bool {
     guard let source = CGEventSource(stateID: .hidSystemState),
           let move = CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left),
           let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
@@ -358,8 +395,26 @@ func visibleSurfaces() -> [Surface] {
 func surfaceRoot(app: AXUIElement, windows: [AXUIElement], surface: CGRect,
                          openedFrom: AXUIElement?, deadline: Date,
                          read: (AXUIElement, String) -> CFTypeRef? = attribute,
-                         frame: (AXUIElement) -> CGRect? = elementFrame) -> AXUIElement? {
+                         frame: (AXUIElement) -> CGRect? = elementFrame,
+                         hitTest: (AXUIElement, CGPoint) -> AXUIElement? = { app, point in
+                             var element: AXUIElement?
+                             return AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &element) == .success ? element : nil
+                         }) -> AXUIElement? {
     if let window = windows.first(where: { frame($0).map { approximatelyEqual($0, surface) } ?? false }) { return window }
+    // Some native context menus are absent from application/window children.
+    // Read at the known menu surface, then validate the menu ancestor's bounds.
+    // This is an AX hit test, never a click or a substitute background target.
+    for point in [CGPoint(x: surface.midX, y: surface.midY), CGPoint(x: surface.minX + 12, y: surface.minY + 12)] {
+        guard Date() < deadline else { return nil }
+        guard var element = hitTest(app, point) else { continue }
+        for _ in 0..<8 {
+            guard Date() < deadline, read(element, kAXHiddenAttribute) as? Bool != true else { break }
+            if read(element, kAXRoleAttribute) as? String == kAXMenuRole,
+               let rect = frame(element), approximatelyEqual(rect, surface) { return element }
+            guard let parent = read(element, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+            element = parent as! AXUIElement
+        }
+    }
     var roots: [AXUIElement] = []
     if let openedFrom { roots.append(openedFrom) }
     for key in [kAXFocusedUIElementAttribute, kAXFocusedWindowAttribute, kAXMenuBarAttribute, "AXExtrasMenuBar"] {
@@ -454,11 +509,39 @@ private func currentSystemPopup(extras: [pid_t], deadline: Date) -> (AXUIElement
         let app = AXUIElementCreateApplication(surface.pid)
         AXUIElementSetMessagingTimeout(app, 0.08)
         let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
-        if let window = windows.first(where: { elementFrame($0).map { approximatelyEqual($0, surface.frame) } ?? false }) {
+        if let window = windows.first(where: { elementFrame($0).map { approximatelyEqual($0, surface.frame) } ?? false }),
+           hasExposedPopupControl(window, deadline: probeDeadline) {
             return (window, surface)
         }
     }
     return nil
+}
+
+/// Transparent popup hosts may remain in WindowServer and AX after closing.
+/// Require a real exposed control, not merely the host window's old rectangle.
+func hasExposedPopupControl(_ root: AXUIElement, deadline: Date,
+                           read: (AXUIElement, String) -> CFTypeRef? = attribute,
+                           frame: (AXUIElement) -> CGRect? = elementFrame,
+                           hit: (CGPoint) -> AXUIElement? = { point in
+                               var element: AXUIElement?
+                               return AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(point.x), Float(point.y), &element) == .success ? element : nil
+                           }) -> Bool {
+    var queue = [root], cursor = 0, seen = Set<CFHashCode>()
+    while cursor < queue.count, cursor < 96, Date() < deadline {
+        let element = queue[cursor]; cursor += 1
+        guard seen.insert(CFHash(element)).inserted, read(element, kAXHiddenAttribute) as? Bool != true else { continue }
+        let role = read(element, kAXRoleAttribute) as? String ?? ""
+        if ["AXButton", "AXCheckBox", "AXRadioButton", "AXSlider", "AXMenuItem"].contains(role),
+           let rect = frame(element), var exposed = hit(CGPoint(x: rect.midX, y: rect.midY)) {
+            for _ in 0..<8 {
+                if CFEqual(exposed, root) { return true }
+                guard let parent = read(exposed, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+                exposed = parent as! AXUIElement
+            }
+        }
+        queue += read(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+    }
+    return false
 }
 
 /// Menu-level windows also include passive banners. A matching window frame

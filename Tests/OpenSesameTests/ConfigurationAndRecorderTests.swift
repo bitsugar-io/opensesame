@@ -69,6 +69,35 @@ struct ConfigurationAndRecorderTests {
             #expect(!model.recordingShortcut && model.shortcut.keyCode == 40)
         }
     }
+    @Test func stacksRecorderSavesItsOwnBindingAndRejectsTheHintsBinding() throws {
+        try fixture { model, url in
+            let button = RecorderButton(model: model, purpose: .stacks)
+            button.performClick(nil)
+            _ = button.accept(try key(49, flags: [.control, .shift], text: " "))
+            #expect(model.recordingShortcut && model.stacksShortcut == .stacks)
+            #expect(model.configurationValid)
+            _ = button.accept(try key(40, flags: [.option, .command], text: "k"))
+            let disk = try AppConfiguration.parse(String(contentsOf: url, encoding: .utf8))
+            #expect(disk.stacksShortcut.keyCode == 40 && disk.shortcut == Shortcut())
+            #expect(!model.recordingShortcut)
+            model.reloadConfiguration()
+            #expect(model.stacksShortcut == disk.stacksShortcut)
+        }
+    }
+    @Test func saveStackRecorderPersistsAndRejectsOtherBindings() throws {
+        try fixture { model, url in
+            let button = RecorderButton(model: model, purpose: .saveStack)
+            button.performClick(nil)
+            _ = button.accept(try key(49, flags: [.control, .option], text: " "))
+            #expect(model.recordingShortcut && model.saveStackShortcut == .saveStack)
+            _ = button.accept(try key(1, flags: [.option, .command], text: "s"))
+            let disk = try AppConfiguration.parse(String(contentsOf: url, encoding: .utf8))
+            #expect(disk.saveStackShortcut == model.saveStackShortcut)
+            #expect(disk.saveStackShortcut.keyCode == 1 && !model.recordingShortcut)
+            model.reloadConfiguration()
+            #expect(model.saveStackShortcut == disk.saveStackShortcut)
+        }
+    }
     @Test func recorderRejectsUnmodifiedLettersAndStopsAfterConfigurationError() throws {
         try fixture { model, _ in
             let button = RecorderButton(model: model)
@@ -86,13 +115,15 @@ struct ConfigurationAndRecorderTests {
 
 @MainActor
 struct ReadableAlphabetMigrationTests {
-    @Test func startupUpgradesTheOldAlphabetAndKeepsCustomLetters() throws {
+    @Test(arguments: [HintConfiguration.legacyAlphabet, HintConfiguration.previousDefaultAlphabet])
+    func startupUpgradesTheOldAlphabetAndKeepsCustomLetters(oldAlphabet: String) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("config.toml")
         var config = AppConfiguration()
-        config.hints.alphabet = HintConfiguration.legacyAlphabet
+        config.stacks = StacksConfiguration()
+        config.hints.alphabet = oldAlphabet
         config.hints.minimumLength = 3; config.hints.prefix = "k"
         try config.toml().write(to: url, atomically: true, encoding: .utf8)
         let model = Controller(configurationURL: url)

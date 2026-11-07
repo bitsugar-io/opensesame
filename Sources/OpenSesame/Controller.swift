@@ -7,6 +7,19 @@ final class Controller: ObservableObject {
     @Published var appearanceMode: AppearanceMode = .system { didSet { refreshAppearance(); saveConfiguration() } }
     @Published var customTheme = CustomTheme() { didSet { refreshAppearance(); saveConfiguration() } }
     @Published var shortcut = Shortcut() { didSet { cancel(reason: "shortcut-changed"); onAppearanceChange?(); saveConfiguration() } }
+    @Published var stacksShortcut = Shortcut.stacks { didSet { cancel(reason: "stacks-shortcut-changed"); saveConfiguration() } }
+    @Published var saveStackShortcut = Shortcut.saveStack { didSet { cancel(reason: "save-stack-shortcut-changed"); saveConfiguration() } }
+    @Published var stackPicker: StackPickerState?
+    @Published var stackCandidate: StackCandidate?
+    var stacks = NavigationStacks()
+    var stacksConfigured = false
+    var stackSaveError: String?
+    var stackRemovalUndo: (stacks: NavigationStacks, picker: StackPickerState)?
+    var liveStackWindows: [UUID: StackWindowResolver.LiveWindow] = [:]
+    var restoredPlaceID: UUID?
+    var recallingStack = false
+    lazy var stackStore = StackStore(url: configurationURL.deletingLastPathComponent().appendingPathComponent("stacks.json"))
+    let stackPanel = StackPanel()
     @Published var recordingShortcut = false { didSet { syncInputRouting() } }
     var onAppearanceChange: (() -> Void)?
     func redrawForAppearance() { redraw() }
@@ -34,6 +47,20 @@ final class Controller: ObservableObject {
         didSet { redraw(); saveConfiguration() }
     }
     @Published var newApp = ""
+    @Published var chromeIcons = false { didSet { cancel(reason: "icon-settings-changed"); saveConfiguration() } }
+    @Published var iconAccessMessage = ""
+    func configureChromeIcons(_ enabled: Bool) {
+        chromeIcons = enabled
+        guard enabled, chromeIcons, configurationValid else { iconAccessMessage = ""; return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let status = ChromeIconAdapter.permission(ask: true)
+            DispatchQueue.main.async {
+                guard let self, self.chromeIcons else { return }
+                self.iconAccessMessage = status == noErr ? "Chrome access allowed. Cached website icons appear with fresh hints."
+                    : "Using app icons. Allow Chrome in System Settings → Privacy & Security → Automation."
+            }
+        }
+    }
     @Published var enabled = true { didSet { if !enabled { cancel() } } }
     @Published var includeMenuBar = UserDefaults.standard.object(forKey: "menuBar") as? Bool ?? true {
         didSet { cancel(); saveConfiguration() }
@@ -48,33 +75,35 @@ final class Controller: ObservableObject {
     @Published var trusted = AXIsProcessTrusted()
     var closeSettings: (() -> Void)?
     private let accessibilityPermission = AccessibilityPermission()
+    private var permissionRegistrationStatus: OSStatus?
     private var keyCharacters: [Int: String] = [:]
     private var keyboardSourceObserver: NSObjectProtocol?
     private var keyboardHook: KeyboardHook?
     private var keyboardHookReady = false
     private var keyboardHookBlocked = false
     private let overlays = Overlays()
-    private var targets: [Target] = []
-    private var sectionContents: [String: [Target]] = [:]
-    private var lastDiscovery: DiscoveryResult?
-    private var lastDiscoveryDate: Date?
-    private var lastDiscoveryOwner: pid_t?
+    var targets: [Target] = []
+    var sectionNavigation = SectionNavigation()
+    var lastDiscovery: DiscoveryResult?
+    var lastDiscoveryDate: Date?
+    var lastDiscoveryOwner: pid_t?
     private var lastAction: [String: Any]?
     private var followupAttempts: [[String: Any]] = []
     private var actionHistory: [[String: Any]] = []
     private var recentEvents: [[String: Any]] = []
-    private var prefix = ""
+    var prefix = ""
     private var ledgerPage = 0
     private var scanHistory: [[String: Any]] = []
-    private var lifecycle = HintLifecycle()
-    private var generation: UUID { lifecycle.generation }
+    private var sectionHistory: [[String: Any]] = []
+    var lifecycle = HintLifecycle()
+    var generation: UUID { lifecycle.generation }
     private var followupID: UUID { lifecycle.followupID }
     private var followingAction: Bool { lifecycle.followingAction }
-    private var active = false
-    private var scanning = false
-    private var owner: pid_t = 0
+    var active = false
+    var scanning = false
+    var owner: pid_t = 0
     private var timer: Timer?
-    private let worker = DispatchQueue(label: "io.bitsugar.opensesame.discovery")
+    let worker = DispatchQueue(label: "io.bitsugar.opensesame.discovery")
 
     func start() {
         loadConfigurationAtStartup()
@@ -91,34 +120,44 @@ final class Controller: ObservableObject {
             self.trusted = AXIsProcessTrusted()
             if self.trusted && self.keyboardHook == nil && !self.keyboardHookBlocked { self.installTap() }
             self.syncInputRouting()
-            // Focus-following tools can activate another app without user input.
-            // Keep the session bound to its discovered controls until dismissed.
             if (self.active || self.scanning) && !self.trusted { self.cancel(reason: "accessibility-lost") }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.record("app-activated")
+            guard let self else { return }
+            self.record("app-activated")
+            // A launched app may activate after an early popup rescan completes.
+            // Never leave that old popup's labels floating over the new window.
+            if (self.active || self.scanning), self.stackPicker == nil,
+               !self.recallingStack, !self.followingAction {
+                self.cancel(reason: "active-app-changed")
+                self.message = "App changed. Press the shortcut for fresh hints."
+            }
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.cancel(reason: "displays-changed") }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
-            self.cancel(preserveFollowup: self.followingAction, reason: "space-changed")
+            if !self.recallingStack { self.cancel(preserveFollowup: self.followingAction, reason: "space-changed") }
         }
     }
     func requestPermission(showSettings: Bool = true) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let result = await self.accessibilityPermission.requestWithRetry(showSettings: showSettings)
+            self.permissionRegistrationStatus = result
             self.trusted = AXIsProcessTrusted()
             if result != noErr {
                 self.message = "macOS could not register OpenSesame (error \(result)). Use the Accessibility permission button to retry."
+            } else if !self.trusted {
+                self.message = "Accessibility access requested. Enable OpenSesame in System Settings."
             }
         }
     }
     private var hasPagedLedger: Bool { overlays.hasPagedChoices || (lastDiscovery?.scopeFrame != nil && !targets.isEmpty && targets.allSatisfy { $0.metadata.role == "AXMenuItem" }) }
-    private func syncInputRouting() {
+    func syncInputRouting() {
         keyboardHook?.update(KeyboardRouting.Snapshot(generation: generation, shortcut: shortcut,
             enabled: enabled && configurationValid && trusted, recording: recordingShortcut, active: active,
-            pending: scanning || followingAction, labels: targets.map(\.label), canPage: hasPagedLedger, keyCharacters: keyCharacters))
+            pending: scanning || followingAction, labels: stackPicker?.codes ?? targets.map(\.label), canPage: hasPagedLedger, keyCharacters: keyCharacters,
+            stacksShortcut: stacksShortcut, saveStackShortcut: saveStackShortcut, stacksOpen: stackPicker != nil, mousePassthroughFrame: stackPanel.eventFrame))
     }
     private func installTap() {
         guard AXIsProcessTrusted(), keyboardHook == nil, !keyboardHookBlocked else { return }
@@ -156,6 +195,12 @@ final class Controller: ObservableObject {
         if key == 20 && modifiers.contains([.maskCommand, .maskShift]) && !modifiers.contains(.maskAlternate) {
             return false
         }
+        if key == Int64(stacksShortcut.keyCode), modifiers == stacksShortcut.flags {
+            guard enabled else { return false }
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return true }
+            if stackPicker != nil { cancel(reason: "stacks-hotkey") } else { showStacks() }
+            return true
+        }
         if key == Int64(shortcut.keyCode) && modifiers == shortcut.flags {
             guard enabled else { return false }
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return true }
@@ -170,7 +215,21 @@ final class Controller: ObservableObject {
         if key == 53 { cancel(reason: "escape"); return true }
         // While discovery runs, leave normal typing intact and discard the pending scan.
         if scanning { cancel(reason: "key-during-discovery"); return false }
-        if key == 51 { if !prefix.isEmpty { prefix.removeLast() }; ledgerPage = 0; redraw(); return true }
+        if key == Int64(saveStackShortcut.keyCode), modifiers == saveStackShortcut.flags {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { saveCurrentStack() }
+            return true
+        }
+        if stackPicker != nil { return handleStackKey(event, key: Int(key), modifiers: modifiers) }
+        if modifiers.isDisjoint(with: [.maskControl, .maskAlternate, .maskCommand]) {
+            if key == 49 { showStacks(); return true }
+            if key == 36 { resumeLastStack(); return true }
+            if key == 51, modifiers.contains(.maskShift) { previousStack(); return true }
+        }
+        if key == 51 {
+            if !prefix.isEmpty { prefix.removeLast() }
+            else if sectionNavigation.back() { restoredPlaceID = nil; refreshSectionPage(); return true }
+            ledgerPage = 0; redraw(); return true
+        }
         if key == 48, hasPagedLedger,
            modifiers.intersection([.maskControl, .maskAlternate, .maskCommand]).isEmpty {
             ledgerPage += modifiers.contains(.maskShift) ? -1 : 1
@@ -206,7 +265,7 @@ final class Controller: ObservableObject {
                           "hint": target.label, "role": target.metadata.role,
                           "title": target.metadata.title, "description": target.metadata.description,
                           "owner": target.metadata.owner, "action": target.action,
-                          "route": target.clicksMenuBarExtra ? "mouse" : "accessibility", "status": "queued"]
+                          "route": target.clicksMenuBarExtra || target.action == TabSelection.groupClick ? "mouse" : "accessibility", "status": "queued"]
             // AX work stays on the UI side of the asynchronous keyboard router.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -221,47 +280,103 @@ final class Controller: ObservableObject {
                     self.message = "That control moved or disappeared. Summon fresh hints."; return
                 }
                 if target.kind == .window {
+                    let transition = self.lifecycle.beginFollowup()
+                    self.scanning = true
+                    self.syncInputRouting()
                     let app = AXUIElementCreateApplication(target.metadata.owner)
+                    AXUIElementSetMessagingTimeout(app, 0.08)
+                    let activated = NSRunningApplication(processIdentifier: target.metadata.owner)?.activate(options: [.activateIgnoringOtherApps]) ?? false
                     AXUIElementSetAttributeValue(app, kAXFocusedWindowAttribute as CFString, target.element)
                     AXUIElementSetAttributeValue(target.element, kAXMainAttribute as CFString, kCFBooleanTrue)
                     let raised = AXUIElementPerformAction(target.element, kAXRaiseAction as CFString)
-                    let activated = NSRunningApplication(processIdentifier: target.metadata.owner)?.activate(options: [.activateIgnoringOtherApps]) ?? false
                     self.lastAction?["status"] = "window-focus-returned"
                     self.lastAction?["result"] = raised.rawValue
                     self.lastAction?["activated"] = activated
-                    self.message = raised == .success && activated ? "Window selected. Hints off; type normally." : "Could not focus that window. Summon fresh hints."
+                    guard activated else {
+                        self.cancel(reason: "window-activation-failed")
+                        self.message = "Could not focus that window. Summon fresh hints."
+                        return
+                    }
+                    self.message = "Finding controls in the selected window…"
+                    self.refreshSelectedWindow(.init(owner: target.metadata.owner, element: target.element), transition: transition)
                     return
                 }
                 let before = visibleSurfaces()
                 let frontBefore = NSWorkspace.shared.frontmostApplication?.processIdentifier
                 if target.clicksMenuBarExtra {
-                    let sent = clickMenuBarExtra(at: CGPoint(x: frame.midX, y: frame.midY))
+                    let sent = clickPrimaryTarget(at: CGPoint(x: frame.midX, y: frame.midY))
                     self.lastAction?["status"] = sent ? "mouse-events-posted" : "mouse-events-unavailable"
                     self.message = sent ? "Opening menu bar item…" : "Could not send the menu bar click."
-                    if sent, self.generation == actionID { self.refreshAfterAction(target.element, before: before, frontBefore: frontBefore) }
+                    if sent, self.generation == actionID { self.refreshAfterAction(target.element, before: before, frontBefore: frontBefore, menuBarAction: target.metadata.role == "AXMenuBarItem") }
                     return
                 }
-                let result = AXUIElementPerformAction(target.element, target.action as CFString)
+                if target.action == TabSelection.groupClick {
+                    let outcome = TabSelection.clickGroup(target, frame: frame)
+                    self.lastAction?["status"] = outcome.reason
+                    self.lastAction?["details"] = outcome.details
+                    self.message = outcome.posted ? "Updating tab choices…" : "That group is covered or changed. Summon fresh hints."
+                    if outcome.posted { self.refreshAfterTabSelection(target) }
+                    return
+                }
+                let result = AccessibilityActions.perform(target)
                 self.lastAction?["status"] = "accessibility-returned"
                 self.lastAction?["result"] = result.rawValue
                 guard self.generation == actionID else { return }
-                if !target.kind.followsOpenedSurface {
+                if target.kind == .tab {
+                    if result == .success { self.refreshAfterTabSelection(target) }
+                    else { self.message = "The app declined tab selection (AX \(result.rawValue)). Summon fresh hints." }
+                    return
+                }
+                if target.metadata.isDisclosure || target.kind == .desktop {
+                    self.refreshAfterDisclosure(target, frontBefore: frontBefore)
+                    return
+                }
+                if !target.kind.followsOpenedSurface && target.action != kAXShowMenuAction {
                     self.message = result == .success ? "Done. Hints off; type normally." : "The app declined that action (AX \(result.rawValue)). Hints off."
                     return
                 }
                 self.message = result == .success ? "Activated. Checking for an opened menu or window…" : "The app declined that action (AX \(result.rawValue)). Try fresh hints."
                 // Menu opening may take effect even when AX times out waiting for
                 // the app's reply. Detect the resulting surface without retrying the action.
-                self.refreshAfterAction(target.element, before: before, frontBefore: frontBefore)
+                self.refreshAfterAction(target.element, before: before, frontBefore: frontBefore, menuBarAction: target.metadata.role == "AXMenuBarItem")
             }
         } else { redraw() }
         return true
     }
-    func summon(surface: Surface? = nil, openedFrom: AXUIElement? = nil, followup: UUID? = nil) {
+    private func refreshSelectedWindow(_ window: StackWindowResolver.Resolved, transition: UUID) {
+        // Activate once, then observe focus as the window settles. Cancellation
+        // invalidates every pending attempt, including an in-flight scan.
+        WindowSelection.waitForFocus(isCurrent: { [weak self] in
+            guard let self else { return false }
+            return self.followingAction && self.followupID == transition && self.enabled && self.trusted
+        }, focused: { WindowSelection.isFocused(window) }, refresh: { [weak self] in
+            self?.summon(followup: transition, window: window)
+        }, unavailable: { [weak self] in
+            self?.cancel(reason: "selected-window-not-focused")
+            self?.message = "That window did not become active. Summon fresh hints."
+        })
+    }
+    private func refreshAfterDisclosure(_ target: Target, frontBefore: pid_t?) {
+        // A disclosure changes the existing surface, not necessarily its window.
+        // Observe the fresh tree once; never replay an action after an AX timeout.
+        let ticket = lifecycle.beginFollowup()
+        syncInputRouting()
+        message = "Refreshing choices…"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.followupID == ticket, self.enabled, self.trusted else { return }
+            let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            self.lifecycle.finishFollowup(ticket)
+            guard front == frontBefore || front == target.metadata.owner else {
+                self.cancel(reason: "disclosure-owner-changed"); return
+            }
+            self.summon()
+        }
+    }
+    func summon(surface: Surface? = nil, openedFrom: AXUIElement? = nil, followup: UUID? = nil, restoring: NavigationPlace? = nil, window: StackWindowResolver.Resolved? = nil, menuBarFallback: Bool = false, tabSelection: TabSelection = .none) {
         guard configurationValid else { return }
         var sourcePID: pid_t = 0
         if let openedFrom { AXUIElementGetPid(openedFrom, &sourcePID) }
-        let scanApp = surface.flatMap { NSRunningApplication(processIdentifier: $0.pid) }
+        let scanApp = window.flatMap { NSRunningApplication(processIdentifier: $0.owner) } ?? surface.flatMap { NSRunningApplication(processIdentifier: $0.pid) }
             ?? (sourcePID != 0 ? NSRunningApplication(processIdentifier: sourcePID) : nil)
             ?? NSWorkspace.shared.frontmostApplication
         guard enabled, AXIsProcessTrusted(), let app = scanApp,
@@ -273,21 +388,32 @@ final class Controller: ObservableObject {
         }
         closeSettings?()
         cancel(preserveFollowup: followup != nil, reason: "scan-started")
-        owner = app.processIdentifier; scanning = true
+        owner = app.processIdentifier; scanning = true; recallingStack = restoring != nil
         syncInputRouting()
         let ticket = generation, pid = owner
-        let extras = includeMenuBar ? NSWorkspace.shared.runningApplications.filter {
+        let allowedApps = NSWorkspace.shared.runningApplications.filter {
             $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && Hints.allows(bundleID: $0.bundleIdentifier ?? "", name: $0.localizedName ?? "", list: apps, only: only)
-        }.map(\.processIdentifier) : []
+        }.map(\.processIdentifier)
+        let extras = includeMenuBar ? allowedApps : []
+        let windowOwners = Set(allowedApps)
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         let screens = NSScreen.screens.map { CGRect(x: $0.frame.minX, y: top - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height) }
         message = "Finding controls…"
         let configuration = hintConfiguration
+        let useChromeIcons = chromeIcons
         worker.async { [weak self] in
-            let result = Discovery.scan(pid: pid, extras: extras, screens: screens, surface: surface, openedFrom: openedFrom, configuration: configuration, popupOnly: followup != nil)
+            var result = Discovery.scan(pid: pid, extras: extras, screens: screens, surface: surface, openedFrom: openedFrom, configuration: configuration, popupOnly: followup != nil && window == nil, menuBarFallback: menuBarFallback, windowOwners: windowOwners, requestedWindow: window?.element)
+            if useChromeIcons, let frame = result.window?.frame {
+                result.targets = ChromeIconAdapter.enrich(result.targets, window: frame)
+            }
             DispatchQueue.main.async {
                 guard let self, self.lifecycle.accepts(generation: ticket, followup: followup) else { return }
+                if let window, !WindowSelection.isFocused(window) {
+                    self.cancel(reason: "selected-window-changed-during-scan")
+                    return
+                }
                 self.scanning = false
+                self.recallingStack = false
                 self.record("scan-completed-\(result.targets.count)")
                 self.lastDiscovery = result
                 self.lastDiscoveryDate = Date()
@@ -295,11 +421,14 @@ final class Controller: ObservableObject {
                 self.scanHistory.append(self.discoverySnapshot(result, owner: pid, date: self.lastDiscoveryDate))
                 if self.scanHistory.count > 8 { self.scanHistory.removeFirst(self.scanHistory.count - 8) }
                 let found = result.targets
-                if !found.isEmpty, let followup, self.followupID == followup {
+                if (!found.isEmpty || window != nil), let followup, self.followupID == followup {
                     self.lifecycle.finishFollowup(followup)
                 }
-                self.targets = self.sectionedTargets(found, scopedPopup: result.scopeFrame != nil); self.active = !found.isEmpty
+                self.targets = self.sectionedTargets(found, scopedPopup: result.scopeFrame != nil, windowFrame: result.window?.frame, tabSelection: tabSelection); self.active = !found.isEmpty
                 self.message = found.isEmpty ? "No accessible press actions found in this app." : "\(found.count) hints · type a label · Esc cancels"
+                if self.sectionNavigation.sectionCount > 0 {
+                    self.message = "\(self.sectionNavigation.sectionCount) sections · type a label to narrow the choices · Esc cancels"
+                }
                 if found.isEmpty, result.rootResolution == "unmatched-menu-surface" {
                     self.message = "An open popup could not be read. Dismiss it and summon fresh hints."
                 } else if found.isEmpty, result.rootProbes.contains(where: { ($0["error"] as? Int32) == AXError.apiDisabled.rawValue }) {
@@ -309,11 +438,28 @@ final class Controller: ObservableObject {
                    !found.contains(where: { $0.metadata.owner == pid && $0.metadata.role != "AXMenuBarItem" && $0.kind != .window }) {
                     self.message = "Spotify has not exposed its window controls to Accessibility. Menu hints are available."
                 }
+                if let restoring {
+                    guard let discovered = result.window, let window, CFEqual(discovered.element, window.element) else {
+                        self.showStacks(notice: "That window is no longer available. Choose another stack."); return
+                    }
+                    guard !found.isEmpty else {
+                        self.showStacks(notice: "No accessible controls were found in that window. Open its content and try again."); return
+                    }
+                    let restored = !result.reachedLimit && (restoring.region.map {
+                        self.sectionNavigation.restore($0, window: discovered.frame, configuration: configuration)
+                    } ?? true)
+                    self.targets = self.sectionNavigation.targets
+                    self.restoredPlaceID = restored ? restoring.id : nil
+                    self.liveStackWindows[restoring.id] = .init(owner: pid, element: discovered.element)
+                    if restored { self.recordStackVisit(restoring.id) }
+                    self.message = restored ? "\(restoring.appName) · \(restoring.regionName) · type a label · Backspace goes up" : "Saved region changed. Showing this window’s current choices."
+                    if !restored { self.stackPanel.showNotice(self.message, palette: self.resolvedPalette) }
+                }
                 self.redraw()
             }
         }
     }
-    private func refreshAfterAction(_ element: AXUIElement, before: [Surface], frontBefore: pid_t?) {
+    private func refreshAfterAction(_ element: AXUIElement, before: [Surface], frontBefore: pid_t?, menuBarAction: Bool = false) {
         var targetPID: pid_t = 0
         guard AXUIElementGetPid(element, &targetPID) == .success else { return }
         let ticket = lifecycle.beginFollowup()
@@ -355,7 +501,7 @@ final class Controller: ObservableObject {
                 // Even without a WindowServer change, query explicitly shown
                 // AX menus/dialogs. A popup-only scan never substitutes the
                 // background app if no popup actually opened.
-                self.summon(surface: opened, openedFrom: element, followup: ticket)
+                self.summon(surface: opened, openedFrom: element, followup: ticket, menuBarFallback: menuBarAction && delay >= 0.5)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
@@ -373,8 +519,9 @@ final class Controller: ObservableObject {
     }
     func cancel(preserveFollowup: Bool = false, reason: String = "cancelled") {
         if active || scanning || followingAction { record(reason) }
+        stackPicker = nil; stackCandidate = nil; stackRemovalUndo = nil; stackPanel.hide(); restoredPlaceID = nil; recallingStack = false
         lifecycle.cancel(preservingFollowup: preserveFollowup)
-        active = false; scanning = false; prefix = ""; ledgerPage = 0; targets = []; sectionContents = [:]
+        active = false; scanning = false; prefix = ""; ledgerPage = 0; targets = []; sectionNavigation.clear()
         syncInputRouting()
         overlays.hide()
     }
@@ -387,8 +534,12 @@ final class Controller: ObservableObject {
             "targetCount": targets.count, "message": message,
             "hintConfiguration": ["minimumLength": hintConfiguration.minimumLength, "alphabet": hintConfiguration.alphabet, "prefix": hintConfiguration.prefix],
             "visiblePanels": overlays.visiblePanelCount, "recentEvents": recentEvents,
-            "actionHistory": actionHistory, "followupAttempts": followupAttempts, "scanHistory": scanHistory
+            "actionHistory": actionHistory, "followupAttempts": followupAttempts, "scanHistory": scanHistory,
+            "sectionHistory": sectionHistory, "sectionDepth": sectionNavigation.depth,
+            "stacksShortcut": stacksShortcut.display, "stacksOpen": stackPicker != nil,
+            "stackCount": stacks.places.count, "pinnedStackCount": stacks.pins.count
         ]
+        if let permissionRegistrationStatus { snapshot["permissionRegistrationStatus"] = permissionRegistrationStatus }
         if let lastAction { snapshot["lastAction"] = lastAction }
         if let discovery = lastDiscovery {
             snapshot["lastScan"] = discoverySnapshot(discovery, owner: lastDiscoveryOwner, date: lastDiscoveryDate)
@@ -404,7 +555,7 @@ final class Controller: ObservableObject {
         let rows: [[String: Any]] = discovery.targets.prefix(256).map { target in
             ["hint": target.label, "role": target.metadata.role, "subrole": target.metadata.subrole,
              "title": target.metadata.title, "description": target.metadata.description,
-             "owner": target.metadata.owner, "bundleID": target.metadata.bundleID, "kind": target.kind.rawValue, "frame": rect(target.frame)]
+             "owner": target.metadata.owner, "bundleID": target.metadata.bundleID, "kind": target.kind.rawValue, "action": target.action, "frame": rect(target.frame)]
         }
         var scan: [String: Any] = ["targets": rows, "targetCount": discovery.targets.count, "rootRoles": discovery.rootRoles,
             "accessibilityPreparation": discovery.accessibilityPreparation, "rootProbes": discovery.rootProbes, "rootResolution": discovery.rootResolution, "rejected": discovery.rejected,
@@ -416,57 +567,45 @@ final class Controller: ObservableObject {
     }
     @discardableResult
     func selectSection(_ label: String) -> Bool {
-        guard let contents = sectionContents[label] else { return false }
-        sectionContents = [:]
-        let labels = Hints.labels(count: contents.count, configuration: hintConfiguration)
-        targets = zip(contents, labels).map { target, label in
-            Target(element: target.element, frame: target.frame, label: label, kind: target.kind,
-                   action: target.action, clicksMenuBarExtra: target.clicksMenuBarExtra, metadata: target.metadata)
-        }
-        prefix = ""; ledgerPage = 0
-        // The input thread disarmed the completed code. A fresh generation
-        // makes the section's new labels available without posting any event.
-        lifecycle.cancel(preservingFollowup: false)
-        active = true
-        message = "\(targets.count) controls in section · type a label · Esc cancels"
-        redraw()
+        guard sectionNavigation.select(label, configuration: hintConfiguration) else { return false }
+        restoredPlaceID = nil
+        refreshSectionPage()
+        sectionHistory.append(["selected": label, "depth": sectionNavigation.depth,
+            "sectionCount": sectionNavigation.sectionCount, "at": ISO8601DateFormatter().string(from: Date()),
+            "choices": targets.prefix(256).map { target in
+                ["hint": target.label, "role": target.metadata.role, "action": target.action,
+                 "title": target.metadata.title, "description": target.metadata.description,
+                 "frame": ["x": target.frame.minX, "y": target.frame.minY, "width": target.frame.width, "height": target.frame.height]] as [String: Any]
+            }])
+        if sectionHistory.count > 12 { sectionHistory.removeFirst(sectionHistory.count - 12) }
         return true
     }
-    func sectionedTargets(_ found: [Target], scopedPopup: Bool) -> [Target] {
-        sectionContents = [:]
-        // Popups are already a focused section. Keep window/menu navigation
-        // directly available alongside sections of the crowded window.
-        guard !scopedPopup else { return found }
-        let controls = found.filter { $0.kind != .window && $0.metadata.role != "AXMenuBarItem" }
-        let sections = HintSections.make(frames: controls.map(\.frame))
-        guard !sections.isEmpty else { return found }
-        let navigation = found.filter { $0.kind == .window || $0.metadata.role == "AXMenuBarItem" }
-        let labels = Hints.labels(count: sections.count + navigation.count, configuration: hintConfiguration)
-        var result: [Target] = []
-        let whole = controls.reduce(CGRect.null) { $0.union($1.frame) }
-        for (index, section) in sections.enumerated() {
-            let contents = section.indices.map { controls[$0] }
-            guard let first = contents.first else { continue }
-            let label = labels[index]
-            sectionContents[label] = contents
-            let vertical = section.frame.midY < whole.minY + whole.height / 3 ? "Upper" : (section.frame.midY > whole.maxY - whole.height / 3 ? "Lower" : "Middle")
-            let horizontal = section.frame.midX < whole.minX + whole.width / 3 ? "left" : (section.frame.midX > whole.maxX - whole.width / 3 ? "right" : "center")
-            let metadata = TargetMetadata(role: "OpenSesameSection", subrole: "", title: "\(vertical) \(horizontal) · \(contents.count)",
-                description: "", owner: first.metadata.owner, bundleID: first.metadata.bundleID)
-            result.append(Target(element: first.element, frame: section.frame, label: label, kind: .control,
-                action: "", clicksMenuBarExtra: false, metadata: metadata))
-        }
-        for (index, target) in navigation.enumerated() {
-            result.append(Target(element: target.element, frame: target.frame, label: labels[sections.count + index],
-                kind: target.kind, action: target.action, clicksMenuBarExtra: target.clicksMenuBarExtra, metadata: target.metadata))
-        }
-        return result
+    private func refreshSectionPage() {
+        targets = sectionNavigation.targets
+        prefix = ""; ledgerPage = 0
+        // Each level gets a new input generation after a completed code.
+        // Only the UI-side handler changes pages; input callbacks stay bounded.
+        lifecycle.cancel(preservingFollowup: false)
+        active = true
+        let choices = sectionNavigation.sectionCount > 0 ? "\(sectionNavigation.sectionCount) sections" : "\(targets.count) controls"
+        let back = sectionNavigation.canGoBack ? " · Backspace goes back" : ""
+        message = "\(choices) · type a label\(back) · Esc cancels"
+        redraw()
     }
-    private func redraw() {
+    func sectionedTargets(_ found: [Target], scopedPopup: Bool, windowFrame: CGRect? = nil, tabSelection: TabSelection = .none) -> [Target] {
+        sectionNavigation.reset(found, scopedPopup: scopedPopup, configuration: hintConfiguration, windowFrame: windowFrame, tabSelection: tabSelection)
+    }
+    func redraw() {
         syncInputRouting()
+        if stackPicker != nil { overlays.hide(); redrawStacks(); return }
         guard active else { overlays.hide(); return }
+        let app = NSRunningApplication(processIdentifier: owner)
         overlays.show(targets, prefix: prefix, fontSize: CGFloat(hintSize),
-                      scopeFrame: lastDiscovery?.placementFrame, textFrames: lastDiscovery?.textFrames ?? [], palette: resolvedPalette, scopedPopup: lastDiscovery?.scopeFrame != nil, ledgerPage: ledgerPage)
+                      scopeFrame: sectionNavigation.scopeFrame ?? lastDiscovery?.placementFrame, textFrames: lastDiscovery?.textFrames ?? [], palette: resolvedPalette,
+                      scopedPopup: lastDiscovery?.scopeFrame != nil, ledgerPage: ledgerPage,
+                      prefersActionPanel: sectionNavigation.prefersActionPanel, canGoBack: sectionNavigation.canGoBack,
+                      windowFrame: lastDiscovery?.window?.frame, appName: app?.localizedName ?? "",
+                      appIcon: app.map { AppIdentity.icon(bundleID: $0.bundleIdentifier ?? "") }, owner: owner)
         syncInputRouting()
     }
 }

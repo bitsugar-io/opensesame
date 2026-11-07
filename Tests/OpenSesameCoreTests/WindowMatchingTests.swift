@@ -6,7 +6,7 @@ import Testing
     let a = CGRect(x: 100, y: 100, width: 600, height: 500)
     let b = a.offsetBy(dx: 20, dy: 20)
     #expect(WindowMatching.visibleIndices(windows: [a, b], surfaces: [b, a]) == [0, 1])
-    #expect(WindowMatching.visibleIndices(windows: [a, b], surfaces: [a]) == [])
+    #expect(WindowMatching.visibleIndices(windows: [a, b], surfaces: [a]) == [0])
 }
 @Test func ambiguousOtherSpaceWindowsAreNotOffered() {
     let a = CGRect(x: 100, y: 100, width: 600, height: 500)

@@ -42,12 +42,14 @@ import Testing
 @Test func crowdedPopupRowsMoveBelowSurfaceInsteadOfCoveringChoices() {
     let controls = (0..<4).map { CompactRowLayout.Control(index: $0, owner: 1, frame: CGRect(x: 100 + $0 * 32, y: 200, width: 24, height: 24)) }
     let captions = [CGRect(x: 90, y: 170, width: 200, height: 24), CGRect(x: 90, y: 230, width: 200, height: 24)]
-    let layout = CompactRowLayout.arrange(controls: controls, badge: CGSize(width: 40, height: 28), bounds: CGRect(x: 0, y: 0, width: 500, height: 400), surface: CGRect(x: 80, y: 150, width: 220, height: 120), obstacles: controls.map(\.frame) + captions, captionHeight: 14)
+    let layout = CompactRowLayout.arrange(controls: controls, badge: CGSize(width: 40, height: 28), bounds: CGRect(x: 0, y: 0, width: 500, height: 400), surface: CGRect(x: 80, y: 164, width: 220, height: 106), obstacles: controls.map(\.frame) + captions, captionHeight: 14)
     #expect(layout.count == 4)
     for placement in layout.values {
         #expect(placement.outsideSurface)
-        #expect(placement.frame.maxY < 150)
+        #expect(placement.frame.maxY < 164)
         #expect(placement.reservation.height == placement.frame.height + 14)
         #expect(!(controls.map(\.frame) + captions).contains { $0.intersects(placement.reservation) })
     }
+    let distant = CompactRowLayout.arrange(controls: controls, badge: CGSize(width: 40, height: 28), bounds: CGRect(x: 0, y: 0, width: 500, height: 400), surface: CGRect(x: 80, y: 80, width: 220, height: 190), obstacles: controls.map(\.frame) + captions, captionHeight: 14)
+    #expect(distant.isEmpty)
 }

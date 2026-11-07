@@ -65,7 +65,8 @@ public enum CompactRowLayout {
                 // its content, never opaque badges on the control's glyphs.
                 for lane in 0..<max(4, groups.count) {
                     let frames = strip(y: surface.minY - 8 - badge.height - CGFloat(lane) * (badge.height + captionHeight + 8))
-                    if fits(frames, captions: true) { chosen = frames; outside = true; break }
+                    if zip(frames, group).allSatisfy({ WidgetLayout.isAssociated($0.0, with: $0.1.frame) }),
+                       fits(frames, captions: true) { chosen = frames; outside = true; break }
                 }
             }
             guard let frames = chosen else { continue }

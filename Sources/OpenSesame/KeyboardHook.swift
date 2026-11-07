@@ -69,7 +69,7 @@ final class KeyboardHook {
         guard event.getIntegerValueField(.eventSourceUserData) != 0x4F534D45 else { return }
         // Release capture on this input thread before waiting for UI dismissal.
         var session = true
-        if lock.try() { session = routing.disarm(); lock.unlock() }
+        if lock.try() { session = routing.mouse(at: event.location); lock.unlock() }
         if session { DispatchQueue.main.async { self.cancel("mouse-or-scroll") } }
     }
     func receive(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {

@@ -21,6 +21,21 @@ private struct MenuFixture {
     }
 }
 
+@Test func menuBarExpansionRefreshesMenusWithoutFallingBackToBackgroundWindowControls() {
+    let f = MenuFixture()
+    var keys: [String] = []
+    func read(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
+        keys.append(key)
+        return key == kAXMenuBarAttribute ? f.menuBar : f.focused
+    }
+    let menus = Discovery.closedSurfaceRoots(app: f.app, popupOnly: true, menuBarFallback: true, read: read)
+    #expect(menus.window == nil && menus.menu.map { CFEqual($0, f.menuBar) } == true)
+    #expect(keys == [kAXMenuBarAttribute])
+    keys = []
+    let popup = Discovery.closedSurfaceRoots(app: f.app, popupOnly: true, menuBarFallback: false, read: read)
+    #expect(popup.window == nil && popup.menu == nil && keys.isEmpty)
+}
+
 @Test func contextMenuOutsideMenuBarResolvesForFreshAndFollowupScans() {
     let f = MenuFixture()
     func read(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
@@ -64,6 +79,38 @@ private struct MenuFixture {
         deadline: Date().addingTimeInterval(1), read: { _, _ in reads += 1; return nil }, frame: f.frame)
     #expect(root.map { CFEqual($0, f.menu) } == true)
     #expect(reads == 0)
+}
+
+@Test func unenumeratedNativeMenuCanResolveFromAXHitTestWithoutClicking() {
+    let f = MenuFixture()
+    let read: (AXUIElement, String) -> CFTypeRef? = { element, key in
+        if CFEqual(element, f.focused), key == kAXParentAttribute { return f.menu }
+        if CFEqual(element, f.menu), key == kAXRoleAttribute { return kAXMenuRole as CFString }
+        return nil
+    }
+    let root = surfaceRoot(app: f.app, windows: [], surface: f.bounds, openedFrom: nil,
+        deadline: Date().addingTimeInterval(1), read: read, frame: f.frame, hitTest: { _, point in
+            #expect(f.bounds.contains(point)); return f.focused
+        })
+    #expect(root.map { CFEqual($0, f.menu) } == true)
+    let mismatch = surfaceRoot(app: f.app, windows: [], surface: f.bounds.offsetBy(dx: 1000, dy: 0), openedFrom: nil,
+        deadline: Date().addingTimeInterval(1), read: read, frame: f.frame, hitTest: { _, _ in f.focused })
+    #expect(mismatch == nil)
+}
+
+@Test func transparentPopupHostDoesNotPublishLabelsAfterItsControlsDisappear() {
+    let f = MenuFixture()
+    let read: (AXUIElement, String) -> CFTypeRef? = { element, key in
+        if CFEqual(element, f.menu), key == kAXChildrenAttribute { return [f.focused] as CFArray }
+        if CFEqual(element, f.focused) {
+            if key == kAXRoleAttribute { return "AXButton" as CFString }
+            if key == kAXParentAttribute { return f.menu }
+        }
+        return nil
+    }
+    let frame: (AXUIElement) -> CGRect? = { _ in f.bounds }
+    #expect(hasExposedPopupControl(f.menu, deadline: Date().addingTimeInterval(1), read: read, frame: frame, hit: { _ in f.focused }))
+    #expect(!hasExposedPopupControl(f.menu, deadline: Date().addingTimeInterval(1), read: read, frame: frame, hit: { _ in f.stale }))
 }
 
 @Test func sameWindowPopupIsFoundThroughFocusedControlAncestors() {

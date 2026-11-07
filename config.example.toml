@@ -8,16 +8,39 @@ keyCode = 49
 modifiers = ["control", "shift"]
 key = "Space"
 
+# Open explicitly saved stacks.
+[stacks_shortcut]
+keyCode = 49
+modifiers = ["control", "option"]
+key = "Space"
+
 [hints]
 size = 16 # Whole points, 10–22.
 menu_bar = true
 minimum_length = 2 # 1, 2, or 3; grows uniformly when needed.
-alphabet = "sadfjklewcmpgh"
+alphabet = "sadfjkwt" # Distinct in both block selectors and compact tags.
 prefix = ""
 
 [apps]
 mode = "except" # Use only for an allowlist; except for exclusions.
 list = [] # Friendly app names or bundle identifiers.
 
+# Optional website icons from Chrome's local cache. Enable in Apps settings to
+# request macOS Automation access. No network requests or saved tab addresses.
+[icons]
+chrome = false
+
 # Custom colors can be edited on the Style page. The saved configuration
 # includes [custom.light] and [custom.dark] with all seven palette colors.
+
+# Save the current window/section only while hints or stacks are open.
+[save_stack_shortcut]
+keyCode = 36
+modifiers = ["control", "option"]
+key = "Return"
+
+# Only an explicit Save stack action adds a place. Nothing is added on exit.
+# Up to five [[stacks.places]] entries persist here; a sixth requires removal.
+[stacks]
+version = 1
+places = []
