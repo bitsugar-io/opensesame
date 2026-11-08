@@ -14,11 +14,15 @@ final class KeyboardHook {
     let cancel: (String) -> Void
     let installed: (Bool) -> Void
     let disabled: () -> Void
-    init(handle: @escaping (CGEvent, UUID?) -> Void, cancel: @escaping (String) -> Void, installed: @escaping (Bool) -> Void, disabled: @escaping () -> Void) {
-        self.handle = handle; self.cancel = cancel; self.installed = installed; self.disabled = disabled
+    /// The clock the 0.75 s input heartbeat is measured on. Tests pass a fixed
+    /// one so a slow machine cannot expire the heartbeat mid-test.
+    private let now: () -> TimeInterval
+    init(handle: @escaping (CGEvent, UUID?) -> Void, cancel: @escaping (String) -> Void, installed: @escaping (Bool) -> Void, disabled: @escaping () -> Void,
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.handle = handle; self.cancel = cancel; self.installed = installed; self.disabled = disabled; self.now = now
     }
     func update(_ snapshot: KeyboardRouting.Snapshot) {
-        lock.lock(); routing.update(snapshot, now: ProcessInfo.processInfo.systemUptime); lock.unlock()
+        lock.lock(); routing.update(snapshot, now: now()); lock.unlock()
     }
     func disarm() { lock.lock(); routing.disarm(); lock.unlock() }
     func start() {
@@ -92,7 +96,7 @@ final class KeyboardHook {
         event.keyboardGetUnicodeString(maxStringLength: buffer.count, actualStringLength: &length, unicodeString: &buffer)
         let text = String(utf16CodeUnits: buffer, count: min(length, buffer.count))
         let decision = routing.route(key: Int(event.getIntegerValueField(.keyboardEventKeycode)), modifiers: modifiers, text: text,
-                                     repeating: event.getIntegerValueField(.keyboardEventAutorepeat) != 0, now: ProcessInfo.processInfo.systemUptime)
+                                     repeating: event.getIntegerValueField(.keyboardEventAutorepeat) != 0, now: now())
         lock.unlock()
         switch decision {
         case .pass: return Unmanaged.passUnretained(event)

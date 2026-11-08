@@ -492,17 +492,15 @@ running app. Do not start, stop, or replace it to complete this checklist.
 just ready
 ```
 
-This runs justfile formatting, Markdown lint, workflow/package fixtures, Swift
-Testing suites, and release-note checks. To isolate Swift builds while someone
-uses the app:
+This runs justfile formatting, Markdown lint, workflow/package fixtures, and
+Swift Testing suites. To isolate Swift builds while someone uses the app:
 
 ```sh
 just test /private/tmp/opensesame-checks
 ```
 
 Tests must not register login items, prompt for permissions, post input events,
-or move focus. Package checks use fake tools. Release-note checks create commits
-and tags only inside a disposable fixture. `just build` refuses to replace a
+or move focus. Package checks use fake tools. `just build` refuses to replace a
 changed bundle while OpenSesame is running. Verify live interactions separately;
 automated results do not prove cross-app behavior.
 
@@ -611,7 +609,5 @@ the MIT and dependency licenses, and creates a GitHub Release with generated
 notes. These builds are ad-hoc signed and not notarized.
 
 [cliff.toml](cliff.toml) defines the Conventional Commit groups. Use
-`just release-notes` to preview unreleased notes and `just test-release-notes` to
-check grouping and tag boundaries in a temporary fixture. There is no separate
-changelog. Tagging or publishing requires explicit maintainer authorization;
+`just release-notes` to preview unreleased notes. There is no separate changelog. Tagging or publishing requires explicit maintainer authorization;
 adding workflow files does not publish anything.
