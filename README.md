@@ -63,8 +63,9 @@ places when you want to return quickly.
 
 ## Quickstart
 
-For now, run from a checkout. Requires macOS 13+, Swift 6+ from Apple's
-[Command Line Tools](https://developer.apple.com/xcode/resources/), and
+For now, run from a checkout. The app targets macOS 13+. Development and CI use
+Apple Swift 6.4 from the Xcode 27.0
+[Command Line Tools](https://developer.apple.com/xcode/resources/), plus
 [just](https://just.systems).
 
 ```sh

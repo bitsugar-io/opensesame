@@ -18,7 +18,11 @@ mise trust
 mise install
 ```
 
-Swift comes from the selected Apple toolchain. [Package.swift](Package.swift)
+Use Apple Swift 6.4 from the Xcode 27.0 Command Line Tools for development.
+Both test and release CI select those tools on GitHub's `xcode-27` runner
+(currently a preview image) and reject a different compiler version before
+building. Check `swift --version` when local and CI results differ; update both
+workflows together when changing compilers. [Package.swift](Package.swift)
 defines targets and dependencies; `Package.resolved` pins dependency versions.
 Bun runs Markdown linting and git-cliff generates release notes.
 

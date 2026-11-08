@@ -6,12 +6,23 @@ permissions:
   contents: write
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: xcode-27
+    env:
+      # Match the compiler used by the Swift test workflow and local checks.
+      DEVELOPER_DIR: /Library/Developer/CommandLineTools
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+      - name: Toolchain
+        run: |
+          swift_version="$(swift --version)"
+          printf '%s\n' "$swift_version"
+          if [[ "$swift_version" != *"Apple Swift version 6.4 ("* ]]; then
+            echo "Expected Apple Swift 6.4 from the Xcode 27.0 Command Line Tools." >&2
+            exit 1
+          fi
       - name: Set app version
         shell: bash
         run: |
