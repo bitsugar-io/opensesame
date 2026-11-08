@@ -47,10 +47,10 @@ ready: just-fmt-check md-lint test test-release-notes
 artwork:
     zsh scripts/render-artwork.sh
 
-# Render settings screenshots without launching the menu bar app.
+# Render UI checks into the scratch directory without launching the app.
 previews scratch_path=(justfile_directory() / ".build"):
     swift build --product OpenSesame --disable-sandbox --cache-path "{{ justfile_directory() }}/.build/cache" --scratch-path "{{ scratch_path }}"
-    "$(swift build --show-bin-path --disable-sandbox --cache-path .build/cache --scratch-path '{{ scratch_path }}')/OpenSesame" --render-previews asset
+    "$(swift build --show-bin-path --disable-sandbox --cache-path .build/cache --scratch-path '{{ scratch_path }}')/OpenSesame" --render-previews "{{ scratch_path }}/previews"
 
 # Check the bundled TOML example without starting the app.
 check-config scratch_path=(justfile_directory() / ".build"):

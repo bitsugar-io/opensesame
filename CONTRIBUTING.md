@@ -168,7 +168,7 @@ Sources/BrandAssets/           generated README and app icon artwork
 Tests/                        Swift Testing suites
 Resources/                    app metadata, icon, and third-party license notices
 scripts/                      packaging, launch, stop, and workflow checks
-asset/                        generated README artwork and rendered examples
+asset/                        branding and the curated README images
 config.example.toml           example configuration
 .github/                      CI, repository settings, and contribution automation
 ```
@@ -512,6 +512,14 @@ automated results do not prove cross-app behavior.
 just artwork
 just previews /private/tmp/opensesame-checks
 ```
+
+`just previews` writes disposable PNGs to `.build/previews/`, which Git ignores.
+With a scratch directory, output goes to its `previews/` subdirectory instead.
+The Swift fixtures and rendering checks are versioned; the PNGs are generated
+outputs, not test inputs or image-comparison baselines. Every developer can
+regenerate them. Keep only branding and the four README images in `asset/`;
+when updating a README example, copy that selected render from the preview
+directory after inspecting it. Do not commit the full preview output.
 
 Artwork comes from the native brand target. Development-only rendering lives in
 `DevelopmentPreviews.swift`; release builds exclude the synthetic fixtures and

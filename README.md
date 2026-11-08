@@ -137,8 +137,6 @@ choices; a closed or ambiguous window produces an explanation. All saved places
 persist in `[stacks]` in `config.toml`. Old `stacks.json` favorites are imported
 once, leaving the legacy file unchanged.
 
-[See the stacks picker](asset/stacks-current-dark.png) (rendered example).
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development, testing, and troubleshooting.
