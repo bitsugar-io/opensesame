@@ -12,9 +12,9 @@ enum StackPickerPreview {
                 model.appearanceMode = dark ? .dark : .light
                 model.trusted = true
                 let entries = (0..<(variant == "empty" ? 0 : 5)).map { index in
-                    NavigationPlace(window: StackWindow(bundleID: ["com.apple.Music", "com.apple.Terminal", "com.apple.Notes"][index % 3], title: ["Music window", "Project terminal", "Reference notes"][index % 3]),
+                    NavigationPlace(window: StackWindow(bundleID: ["com.apple.Music", "com.apple.Terminal", "com.apple.Notes"][index % 3], title: ["Music window", "Project terminal", "Reference notes", "Library", "Build output"][index]),
                         appName: ["Music", "Terminal", "Notes"][index % 3],
-                        regionName: ["Playback", "Editor", "Reading pane"][index % 3], region: nil, pinned: variant == "full" || index < 2)
+                        regionName: ["Playback", "Editor", "Reading pane", "Library", "Output"][index], region: nil, pinned: variant == "full" || index < 2)
                 }
                 var picker = StackPickerState(entries: entries)
                 if variant == "current" || variant == "narrow" {

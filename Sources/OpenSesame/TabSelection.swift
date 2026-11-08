@@ -18,15 +18,36 @@ enum TabSelection {
         guard getOwner(hit) == owner else { return nil }
         if CFEqual(hit, target) { return "target" }
         if isAncestor(target, of: hit, maximumDepth: 16, read: read) { return "descendant" }
-        // Some providers hit-test the enclosing native group instead of the
-        // tab-strip header. Accept that coarse result only when it is an actual
-        // ancestor in the same window, with bounds containing the whole header.
+        // Native host views can expose a separate AX branch from the tab strip.
+        // Resolve the owning window through either AXWindow or parent links.
         guard ["AXGroup", "AXTabGroup", "AXToolbar"].contains(read(hit, kAXRoleAttribute) as? String ?? ""),
-              isAncestor(hit, of: target, maximumDepth: 16, read: read),
               let hitFrame = getFrame(hit), hitFrame.contains(frame),
-              let targetWindow = read(target, kAXWindowAttribute), CFGetTypeID(targetWindow) == AXUIElementGetTypeID(),
-              let hitWindow = read(hit, kAXWindowAttribute), CFEqual(targetWindow, hitWindow) else { return nil }
-        return "ancestor"
+              let targetWindow = AccessibilityTraversal.window(of: target, read: read),
+              let hitWindow = AccessibilityTraversal.window(of: hit, read: read), CFEqual(targetWindow, hitWindow) else { return nil }
+        if isAncestor(hit, of: target, maximumDepth: 16, read: read) { return "ancestor" }
+        // A same-window sibling is insufficient. Only a window-sized host
+        // group can stand in for the entire native hit-test surface.
+        guard read(hit, kAXRoleAttribute) as? String == "AXGroup",
+              let windowFrame = getFrame(targetWindow), TargetGeometry.isStable(previous: windowFrame, current: hitFrame) else { return nil }
+        return "window-container"
+    }
+    static func hitDiagnostics(target: AXUIElement, hit: AXUIElement) -> [String: Any] {
+        let deadline = Date().addingTimeInterval(0.25)
+        func chain(_ element: AXUIElement) -> [[String: Any]] {
+            var result: [[String: Any]] = [], current = element
+            for _ in 0..<16 {
+                guard Date() < deadline else { break }
+                var row: [String: Any] = ["id": CFHash(current), "role": attribute(current, kAXRoleAttribute) as? String ?? ""]
+                if let frame = elementFrame(current) { row["frame"] = ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height] }
+                if let window = attribute(current, kAXWindowAttribute), CFGetTypeID(window) == AXUIElementGetTypeID() { row["windowID"] = CFHash(window) }
+                result.append(row)
+                if row["role"] as? String == kAXWindowRole { break }
+                guard let parent = attribute(current, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+                current = parent as! AXUIElement
+            }
+            return result
+        }
+        return ["targetAncestors": chain(target), "hitAncestors": chain(hit)]
     }
     static func clickGroup(_ target: Target, frame: CGRect) -> ClickResult {
         guard target.kind == .tab, attribute(target.element, kAXRoleAttribute) as? String == "AXTabGroup",
@@ -49,8 +70,9 @@ enum TabSelection {
         }
         guard let relationship = hitRelationship(target: target.element, hit: hit, frame: frame, owner: target.metadata.owner) else {
             var hitPID: pid_t = 0; AXUIElementGetPid(hit, &hitPID)
-            return .init(posted: false, reason: "group-hit-mismatch", details: [
-                "hitRole": attribute(hit, kAXRoleAttribute) as? String ?? "", "hitOwner": hitPID])
+            var details = hitDiagnostics(target: target.element, hit: hit)
+            details["hitRole"] = attribute(hit, kAXRoleAttribute) as? String ?? ""; details["hitOwner"] = hitPID
+            return .init(posted: false, reason: "group-hit-mismatch", details: details)
         }
         let sent = clickPrimaryTarget(at: point)
         return .init(posted: sent, reason: sent ? "tab-group-click-posted" : "mouse-events-unavailable", details: ["hitRelationship": relationship])
@@ -59,10 +81,10 @@ enum TabSelection {
 
 extension Controller {
     func refreshAfterTabSelection(_ target: Target) {
-        guard let rawWindow = attribute(target.element, kAXWindowAttribute), CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else {
+        guard let selectedWindow = AccessibilityTraversal.window(of: target.element) else {
             message = "That tab's window is unavailable. Summon fresh hints."; return
         }
-        let window = StackWindowResolver.Resolved(owner: target.metadata.owner, element: rawWindow as! AXUIElement)
+        let window = StackWindowResolver.Resolved(owner: target.metadata.owner, element: selectedWindow)
         let ticket = generation
         scanning = true
         syncInputRouting()

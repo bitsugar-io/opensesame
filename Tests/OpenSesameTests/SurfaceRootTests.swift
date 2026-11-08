@@ -21,6 +21,19 @@ private struct MenuFixture {
     }
 }
 
+@Test func selectedWindowScanKeepsAppMenusWithoutSubstitutingTheFocusedWindow() {
+    let f = MenuFixture()
+    var keys: [String] = []
+    let selected = Discovery.closedSurfaceRoots(app: f.app, popupOnly: false, menuBarFallback: false,
+        requestedWindow: f.stale, read: { _, key in
+            keys.append(key)
+            return key == kAXMenuBarAttribute ? f.menuBar : f.focused
+        })
+    #expect(selected.window.map { CFEqual($0, f.stale) } == true)
+    #expect(selected.menu.map { CFEqual($0, f.menuBar) } == true)
+    #expect(keys == [kAXMenuBarAttribute])
+}
+
 @Test func menuBarExpansionRefreshesMenusWithoutFallingBackToBackgroundWindowControls() {
     let f = MenuFixture()
     var keys: [String] = []

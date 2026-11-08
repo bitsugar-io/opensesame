@@ -8,12 +8,17 @@ import OpenSesameCore
 final class SectionLayoutPreview: NSView {
     let palette: ThemePalette
     let controls: [Target]
+    let windowFrame = CGRect(x: 24, y: 80, width: 1052, height: 560)
     var instruction = "Choose one of three regions"
     init(dark: Bool) {
         palette = ThemePalette(theme: .glitch, dark: dark)
         let sidebar = (0..<16).map { ("Item \($0 + 1)", CGRect(x: 48, y: 96 + $0 * 26, width: 140, height: 20)) }
         let toolbar = (0..<8).map { ("\($0 + 1)", CGRect(x: 316 + $0 * 72, y: 96, width: 42, height: 28)) }
-        let content = (0..<12).map { ("Action \($0 + 1)", CGRect(x: 316 + $0 % 4 * 152, y: 226 + $0 / 4 * 82, width: 116, height: 30)) }
+        let content: [(String, CGRect)] = (0..<12).map { index in
+            let x = CGFloat(316 + (index % 4) * 152)
+            let y = CGFloat(226 + (index / 4) * 82)
+            return ("Action \(index + 1)", CGRect(x: x, y: y, width: 116, height: 30))
+        }
         let composer = (0..<8).map { ("\($0 + 1)", CGRect(x: 316 + $0 * 72, y: 562, width: 42, height: 28)) }
         controls = (sidebar + toolbar + content + composer).map { title, frame in
             Target(element: AXUIElementCreateApplication(0), frame: frame, label: "unused", kind: .control,
@@ -55,7 +60,7 @@ final class SectionLayoutPreview: NSView {
                 canvas.screenFrame = view.bounds; canvas.desktopTop = view.bounds.height
                 canvas.fontSize = size; canvas.palette = view.palette
                 var navigation = SectionNavigation()
-                _ = navigation.reset(view.controls, scopedPopup: false, configuration: .standard)
+                _ = navigation.reset(view.controls, scopedPopup: false, configuration: .standard, windowFrame: view.windowFrame)
                 view.addSubview(canvas)
                 guard navigation.targets.count == 3,
                       navigation.targets.flatMap(\.sectionMemberFrames).count == view.controls.count,

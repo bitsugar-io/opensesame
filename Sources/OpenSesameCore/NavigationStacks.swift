@@ -53,9 +53,50 @@ public struct StackAnchor: Codable, Equatable {
     }
 }
 
+/// Window-relative pane identity survives movement, resizing and content changes.
+public struct StackRegionBounds: Codable, Equatable {
+    public let x: Double, y: Double, width: Double, height: Double
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x; self.y = y; self.width = width; self.height = height
+    }
+    enum CodingKeys: String, CodingKey { case x, y, width, height }
+    public init(from decoder: Decoder) throws {
+        try checkKeys(decoder, allowed: ["x", "y", "width", "height"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        x = try c.decode(Double.self, forKey: .x); y = try c.decode(Double.self, forKey: .y)
+        width = try c.decode(Double.self, forKey: .width); height = try c.decode(Double.self, forKey: .height)
+    }
+    public var isValid: Bool {
+        [x, y, width, height].allSatisfy(\.isFinite) && x >= -0.01 && y >= -0.01
+            && width > 0 && height > 0 && x + width <= 1.01 && y + height <= 1.01
+    }
+    func matches(_ other: Self) -> Bool {
+        zip([x, y, width, height], [other.x, other.y, other.width, other.height]).allSatisfy { abs($0 - $1) <= 0.025 }
+    }
+}
+
 public struct StackRegion: Codable, Equatable {
     public let anchors: [StackAnchor]
-    public init(anchors: [StackAnchor]) { self.anchors = Array(anchors.filter(\.hasIdentity).prefix(128)) }
+    public let bounds: StackRegionBounds?
+    public init(anchors: [StackAnchor], bounds: StackRegionBounds? = nil) {
+        self.anchors = Array(anchors.filter(\.hasIdentity).prefix(128)); self.bounds = bounds
+    }
+    /// Save identity is separate from recall confidence. Legacy saves lack
+    /// bounds; require three stable controls and the same region name before
+    /// treating changed content as an update to that destination.
+    public func sameSavedRegion(as other: Self, sameName: Bool) -> Bool {
+        if let bounds, let otherBounds = other.bounds { return bounds.matches(otherBounds) }
+        if similarity(to: other) != nil { return true }
+        guard sameName else { return false }
+        var available = Set(other.anchors.indices), matched = 0
+        for anchor in anchors {
+            if let index = available.first(where: {
+                let candidate = other.anchors[$0]
+                return anchor.matches(candidate) && abs(anchor.x - candidate.x) <= 0.03 && abs(anchor.y - candidate.y) <= 0.03
+            }) { available.remove(index); matched += 1 }
+        }
+        return matched >= 3
+    }
 
     /// Both coverage ratios matter: a whole window containing these same few
     /// controls is not the saved region. Ambiguous matches are rejected by callers.
@@ -118,16 +159,25 @@ public struct NavigationStacks {
     }
     /// Only an explicit Save action may insert or update a destination. Never
     /// evict another saved place, and keep its slot when updating it.
-    public mutating func save(_ place: NavigationPlace) throws {
+    @discardableResult
+    public mutating func save(_ place: NavigationPlace, replacing duplicates: [UUID] = []) throws -> UUID {
         var saved = place; saved.pinned = true
-        if let index = places.firstIndex(where: { $0.id == place.id }) { places[index] = saved }
+        // Only explicit Save consolidates confirmed matches. Preserve the
+        // earliest slot and never remove an unrelated destination on load.
+        let duplicateSet = Set(duplicates + [place.id])
+        if let first = places.first(where: { duplicateSet.contains($0.id) }) {
+            saved.id = first.id
+            for id in duplicateSet where id != first.id { remove(id) }
+        }
+        if let index = places.firstIndex(where: { $0.id == saved.id }) { places[index] = saved }
         else {
             guard places.count < Self.capacity else {
                 throw ConfigurationError.invalid("All five stacks are filled. Remove a place before saving another.")
             }
             places.append(saved)
         }
-        visit(place.id, at: place.lastVisited)
+        visit(saved.id, at: place.lastVisited)
+        return saved.id
     }
     /// Recall can update existing history, but cannot create a stack or change
     /// its saved region. Ordinary hint use never calls this.

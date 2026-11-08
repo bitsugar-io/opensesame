@@ -157,7 +157,7 @@ struct Dashboard: View {
             RegionHintSamples(codes: examples, palette: palette, fontSize: CGFloat(model.hintSize)).frame(maxWidth: .infinity)
             Divider()
             Toggle("Include menu bar extras", isOn: $model.includeMenuBar).font(.system(size: 11)).toggleStyle(.switch).controlSize(.mini)
-            Text("Selecting a tab refreshes its controls; Backspace returns to tabs. Selecting a window returns to normal typing. Close and window-size controls are skipped.")
+            Text("Selecting a window reveals fresh hints. Selecting a tab refreshes its controls; Backspace returns to tabs. Close and window-size controls are skipped.")
                 .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.card(surface: Color(nsColor: NSColor(rgb: palette.surface)))
     }

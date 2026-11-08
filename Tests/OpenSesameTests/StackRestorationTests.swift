@@ -86,3 +86,23 @@ private func controls(in window: CGRect, title: String = "Action") -> [Target] {
     #expect(result.map { CFEqual($0.element, old) } == true)
     #expect(StackWindowResolver.resolve(saved, live: nil, owners: [5], load: { _ in [replacement, old] }, describe: { _ in saved }) == nil)
 }
+
+@Test func savedWindowDeduplicationResolvesAfterRestartAndRejectsAmbiguousTitles() {
+    let window = AXUIElementCreateApplication(101), sibling = AXUIElementCreateApplication(202)
+    let identity = StackWindow(bundleID: "test", title: "Music")
+    let saved = NavigationPlace(window: identity, appName: "Test", regionName: "Playback", region: nil)
+    var other = saved; other.id = UUID(); other.window.bundleID = "other"
+    let current = StackWindowResolver.Resolved(owner: 5, element: window)
+    let restart = StackWindowResolver.matchingPlaces([saved, other], current: current, live: [:],
+        windows: [window], describe: { _ in identity })
+    #expect(restart.map(\.id) == [saved.id])
+    let ambiguous = StackWindowResolver.matchingPlaces([saved], current: current, live: [:],
+        windows: [window, sibling], describe: { _ in identity })
+    #expect(ambiguous.isEmpty)
+    let known = StackWindowResolver.matchingPlaces([saved], current: current,
+        live: [saved.id: .init(owner: 5, element: window)], windows: [window, sibling], describe: { _ in identity })
+    #expect(known.map(\.id) == [saved.id])
+    let otherLive = StackWindowResolver.matchingPlaces([saved], current: current,
+        live: [saved.id: .init(owner: 5, element: sibling)], windows: [window, sibling], describe: { _ in identity })
+    #expect(otherLive.isEmpty)
+}

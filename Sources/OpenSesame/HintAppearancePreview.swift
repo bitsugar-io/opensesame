@@ -12,7 +12,11 @@ final class HintAppearancePreview: NSView {
     let menuExtras = [CGRect(x: 1000, y: 0, width: 34, height: 26), CGRect(x: 1100, y: 0, width: 34, height: 26)]
     let desktopItem = CGRect(x: 1100, y: 606, width: 64, height: 64)
     let tabs = (0..<3).map { CGRect(x: 480 + $0 * 224, y: 142, width: 208, height: 38) }
-    let controls = (0..<6).map { CGRect(x: 496 + $0 % 3 * 220, y: 270 + $0 / 3 * 180, width: 100, height: 32) }
+    let controls: [CGRect] = (0..<6).map { index in
+        let x = CGFloat(496 + (index % 3) * 220)
+        let y = CGFloat(270 + (index / 3) * 180)
+        return CGRect(x: x, y: y, width: 100, height: 32)
+    }
     let controlNames = ["Previous", "Play", "Next", "Search", "Save", "Share"]
     let otherWindow = CGRect(x: 24, y: 100, width: 400, height: 500)
     let currentWindow = CGRect(x: 456, y: 100, width: 720, height: 500)
@@ -72,12 +76,20 @@ final class HintAppearancePreview: NSView {
                 let canvas = HintCanvas(frame: view.bounds)
                 canvas.screenFrame = view.bounds; canvas.desktopTop = view.bounds.height
                 canvas.palette = view.palette; canvas.fontSize = size; canvas.scopeFrame = view.currentWindow
-                let items: [(CGRect, TargetKind, String, String)] = view.menus.enumerated().map { ($0.element, .menu, "AXMenuBarItem", view.menuNames[$0.offset]) }
-                    + [(view.menuExtras[0], .menu, "AXMenuBarItem", ""), (view.menuExtras[1], .menu, "AXMenuBarItem", "Wi-Fi")]
-                    + [(view.otherWindow, .window, "AXWindow", "Other window")]
-                    + view.tabs.enumerated().map { ($0.element, .tab, "AXTab", "Tab \($0.offset + 1)") }
-                    + view.controls.enumerated().map { ($0.element, .control, "AXButton", view.controlNames[$0.offset]) }
-                    + [(view.desktopItem, .desktop, "AXImage", "File")]
+                var items: [(CGRect, TargetKind, String, String)] = []
+                for (index, frame) in view.menus.enumerated() {
+                    items.append((frame, .menu, "AXMenuBarItem", view.menuNames[index]))
+                }
+                items.append((view.menuExtras[0], .menu, "AXMenuBarItem", ""))
+                items.append((view.menuExtras[1], .menu, "AXMenuBarItem", "Wi-Fi"))
+                items.append((view.otherWindow, .window, "AXWindow", "Other window"))
+                for (index, frame) in view.tabs.enumerated() {
+                    items.append((frame, .tab, "AXTab", "Tab \(index + 1)"))
+                }
+                for (index, frame) in view.controls.enumerated() {
+                    items.append((frame, .control, "AXButton", view.controlNames[index]))
+                }
+                items.append((view.desktopItem, .desktop, "AXImage", "File"))
                 let labels = Hints.labels(count: items.count)
                 canvas.targets = zip(items, labels).map { item, code in
                     Target(element: AXUIElementCreateApplication(0), frame: item.0, label: code, kind: item.1,

@@ -29,19 +29,22 @@ places when you want to return quickly.
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><a href="asset/layout-window-selection-light.png"><img src="asset/layout-window-selection-light.png" width="100%" alt="Block-letter selectors on exposed windows, including a partly covered background window"></a></td>
-    <td align="center" width="50%"><a href="asset/screenshots/spotify-sections.png"><img src="asset/screenshots/spotify-sections.png" width="100%" alt="Three colored sections with block-letter codes inside Spotify"></a></td>
+    <td align="center" width="50%"><a href="asset/layout-window-selection-light.png"><img src="asset/layout-window-selection-light.png" height="220" alt="Illustrated window selection with block-letter codes on exposed windows and compact hints inside the active window's tabs"></a></td>
+    <td align="center" width="50%"><a href="asset/screenshots/spotify-sections.png"><img src="asset/screenshots/spotify-sections.png" height="220" alt="Three Spotify regions, with the bottom purple region including playback controls"></a></td>
   </tr>
   <tr>
     <td align="center"><sub>Choose a window · rendered example</sub></td>
-    <td align="center"><sub>Narrow the choices · cropped live capture</sub></td>
+    <td align="center"><sub>Choose a section · cropped live capture</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="asset/stacks-places-dark.png"><img src="asset/stacks-places-dark.png" height="220" alt="Numbered saved places in the stacks picker"></a></td>
+    <td align="center"><a href="asset/settings-hints.png"><img src="asset/settings-hints.png" height="220" alt="OpenSesame hint shortcut and size settings"></a></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Return to a saved place · rendered example</sub></td>
+    <td align="center"><sub>Tune the shortcuts · rendered settings</sub></td>
   </tr>
 </table>
-
-<p align="center">
-  <a href="asset/screenshots/spotify-controls.png"><img src="asset/screenshots/spotify-controls.png" width="800" alt="Compact keyboard tags on Spotify playback controls"></a><br>
-  <sub>Select a control · cropped live capture</sub>
-</p>
 
 ## Features
 
@@ -73,11 +76,6 @@ just start
 2. Click the **open door** in the menu bar to adjust your preferences.
 3. Focus an app and press **Control + Shift + Space**. Release the keys, then type
    the hint label to select a control. Click the shortcut field to change the hotkey.
-
-<p align="center">
-  <a href="asset/settings-hints.png"><img src="asset/settings-hints.png" width="440" alt="OpenSesame settings with the hint shortcut and size controls"></a><br>
-  <sub>Hint settings · rendered view</sub>
-</p>
 
 Click outside the panel or press Escape to close it.
 
@@ -122,8 +120,8 @@ that shortcut during ordinary typing.
 Press **Control + Option + Space** to open stacks from any app, then **1–5** to
 return to a saved place. Arrows and Return work too. Each place shows its app
 icon. Keep up to five: a sixth save asks you to remove one first. Places stay
-in order and are never automatically replaced. Existing entries remain until
-you remove them.
+in order and are never automatically replaced. Saving the same place updates
+its existing slot and combines confirmed duplicates, including after restart.
 
 **Command–Backspace** or the remove button deletes the highlighted place without
 closing its window. **Command–Z** undoes the last removal while the picker is

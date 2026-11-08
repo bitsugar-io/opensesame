@@ -47,3 +47,21 @@ private func savedPlace(pinned: Bool = false) -> NavigationPlace {
         + "anchors = [" + Array(repeating: anchor, count: 129).joined(separator: ",") + "]"
     #expect(throws: (any Error).self) { try AppConfiguration.parse(String(tooMany)) }
 }
+
+@Test func savedRegionBoundsRoundTripAndRejectUnknownOrInvalidFields() throws {
+    var place = savedPlace()
+    let anchors = try #require(place.region).anchors
+    place.region = StackRegion(anchors: anchors, bounds: .init(x: 0.2, y: 0.7, width: 0.8, height: 0.3))
+    let expected = StacksConfiguration(places: [place])
+    let source = try expected.toml()
+    #expect(try AppConfiguration.parse(source).stacks == expected)
+    for invalid in [
+        source.replacingOccurrences(of: "width = 0.8", with: "width = -0.8"),
+        source.replacingOccurrences(of: "width = 0.8", with: "width = 1.0"),
+        source.replacingOccurrences(of: "height = 0.3", with: "height = nan"),
+        source.replacingOccurrences(of: "height = 0.3", with: "height = 0.3, typo = 1"),
+        String(source.prefix(upTo: try #require(source.range(of: "anchors =")).lowerBound))
+    ] {
+        #expect(throws: (any Error).self) { try AppConfiguration.parse(invalid) }
+    }
+}

@@ -21,7 +21,11 @@ import Testing
 @Test func sectionsFollowUnequalPanelsInsteadOfCuttingThemIntoEqualCounts() {
     let sidebar = (0..<16).map { CGRect(x: 48, y: 96 + $0 * 26, width: 140, height: 20) }
     let toolbar = (0..<8).map { CGRect(x: 316 + $0 * 72, y: 96, width: 42, height: 28) }
-    let content = (0..<12).map { CGRect(x: 316 + $0 % 4 * 152, y: 226 + $0 / 4 * 82, width: 116, height: 30) }
+    let content: [CGRect] = (0..<12).map { index in
+        let x = CGFloat(316 + (index % 4) * 152)
+        let y = CGFloat(226 + (index / 4) * 82)
+        return CGRect(x: x, y: y, width: 116, height: 30)
+    }
     let composer = (0..<8).map { CGRect(x: 316 + $0 * 72, y: 562, width: 42, height: 28) }
     let groups = [sidebar, toolbar, content, composer]
     let frames = groups.flatMap { $0 }
@@ -66,7 +70,11 @@ import Testing
 @Test func wideAndNestedControlsDoNotProduceOverlappingSectionBoxes() {
     let dense = Array(repeating: CGRect(x: 20, y: 80, width: 500, height: 260), count: 30)
         + (0..<6).map { CGRect(x: 60 + $0 * 55, y: 100, width: 28, height: 28) }
-    let separate = (0..<12).map { CGRect(x: 600 + $0 % 3 * 70, y: 80 + $0 / 3 * 60, width: 30, height: 25) }
+    let separate: [CGRect] = (0..<12).map { index in
+        let x = CGFloat(600 + (index % 3) * 70)
+        let y = CGFloat(80 + (index / 3) * 60)
+        return CGRect(x: x, y: y, width: 30, height: 25)
+    }
     let frames = dense + separate
     let sections = HintSections.make(frames: frames)
     #expect(sections.count == 2)
@@ -77,8 +85,10 @@ import Testing
 
 @Test func sectionPanesReachWindowEdgesWithoutAddingControlsInEmptyAreas() {
     let window = CGRect(x: 100, y: 200, width: 1200, height: 900)
-    let frames = (0..<60).map { index in
-        CGRect(x: 140 + index % 10 * 100, y: 260 + index / 10 * 90, width: 36, height: 30)
+    let frames: [CGRect] = (0..<60).map { index in
+        let x = CGFloat(140 + (index % 10) * 100)
+        let y = CGFloat(260 + (index / 10) * 90)
+        return CGRect(x: x, y: y, width: 36, height: 30)
     }
     let sections = HintSections.make(frames: frames, bounds: window)
     #expect(sections.count == 3)
@@ -96,7 +106,11 @@ import Testing
 
 @Test func childPanesKeepTheSelectedBoundaryAndDoNotCreateEmptyChoices() {
     let window = CGRect(x: 0, y: 0, width: 1200, height: 1000)
-    let frames = (0..<180).map { CGRect(x: 40 + $0 % 15 * 70, y: 50 + $0 / 15 * 60, width: 24, height: 24) }
+    let frames: [CGRect] = (0..<180).map { index in
+        let x = CGFloat(40 + (index % 15) * 70)
+        let y = CGFloat(50 + (index / 15) * 60)
+        return CGRect(x: x, y: y, width: 24, height: 24)
+    }
     let roots = HintSections.make(frames: frames, bounds: window)
     for root in roots {
         let members = root.indices.map { frames[$0] }

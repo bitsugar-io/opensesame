@@ -57,14 +57,14 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     return CGRect(origin: point, size: size)
 }
 enum Discovery {
-    static func closedSurfaceRoots(app: AXUIElement, popupOnly: Bool, menuBarFallback: Bool,
+    static func closedSurfaceRoots(app: AXUIElement, popupOnly: Bool, menuBarFallback: Bool, requestedWindow: AXUIElement? = nil,
                                    read: (AXUIElement, String) -> CFTypeRef? = attribute) -> (window: AXUIElement?, menu: AXUIElement?) {
         guard !popupOnly || menuBarFallback else { return (nil, nil) }
         func element(_ key: String) -> AXUIElement? {
             guard let value = read(app, key), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-            return value as! AXUIElement
+            return (value as! AXUIElement)
         }
-        return (popupOnly ? nil : element(kAXFocusedWindowAttribute), element(kAXMenuBarAttribute))
+        return (popupOnly ? nil : (requestedWindow ?? element(kAXFocusedWindowAttribute)), element(kAXMenuBarAttribute))
     }
     static func primaryAction(in actions: [String]) -> String? {
         AccessibilityActionPolicy.primary(role: "", kind: .control, advertised: actions)
@@ -101,10 +101,15 @@ enum Discovery {
         var windowFrame: CGRect?
         var currentWindow: AXUIElement?
         if let requestedWindow {
-            // Recall scans this exact window, not whichever app happens to be frontmost.
-            currentWindow = requestedWindow
-            windowFrame = elementFrame(requestedWindow)
-            roots = windowFrame == nil ? [] : [(requestedWindow, false)]
+            // Selection and recall keep the same app-menu navigation as a
+            // fresh summon while scanning this exact window's content.
+            let selected = closedSurfaceRoots(app: app, popupOnly: false, menuBarFallback: false,
+                                              requestedWindow: requestedWindow, read: rootAttribute)
+            currentWindow = selected.window
+            windowFrame = selected.window.flatMap(elementFrame)
+            if let window = selected.window, windowFrame != nil { roots.append((window, false)) }
+            if let menu = selected.menu { roots.append((menu, false)) }
+            pendingExtras = extras
             rootResolution = "saved-window"
         } else if let surface {
             let popupApp = AXUIElementCreateApplication(surface.pid)

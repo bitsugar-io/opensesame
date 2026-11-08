@@ -32,6 +32,67 @@ private func place(_ name: String, pinned: Bool = false, time: Double = 0) -> Na
     try stacks.save(entries[5])
     #expect(stacks.ordered.map(\.id) == [entries[0], entries[2], entries[3], entries[4], entries[5]].map(\.id))
 }
+
+@Test func savingConfirmedDuplicatesKeepsTheEarliestSlotAndUnrelatedPlaces() throws {
+    let entries = (0..<5).map { place("Place \($0)") }
+    var stacks = NavigationStacks(places: entries)
+    // Loading never deletes older saves, even if they look alike.
+    #expect(stacks.ordered == entries)
+    var current = entries[3]; current.regionName = "Updated playback"
+    let savedID = try stacks.save(current, replacing: [entries[3].id, entries[1].id])
+    #expect(savedID == entries[1].id)
+    #expect(stacks.ordered.map(\.id) == [entries[0], entries[1], entries[2], entries[4]].map(\.id))
+    #expect(stacks.ordered[1].regionName == current.regionName)
+    #expect(stacks.last?.id == entries[1].id)
+    #expect(StackPickerState(entries: stacks.ordered).codes == ["1", "2", "3", "4"])
+    try stacks.save(stacks.ordered[1])
+    #expect(stacks.places.count == 4)
+}
+
+@Test func savingAfterRemovingADuplicateReturnsTheSurvivingSlotIdentity() throws {
+    let first = place("Playback"), second = place("Playback")
+    var stacks = NavigationStacks(places: [first, second])
+    stacks.remove(first.id)
+    let savedID = try stacks.save(first, replacing: [first.id, second.id])
+    #expect(savedID == second.id)
+    #expect(stacks.ordered.map(\.id) == [second.id])
+}
+
+@Test func resavingAtCapacityUpdatesTheDestinationWithoutEvictingAnother() throws {
+    let entries = (0..<5).map { place("Place \($0)") }
+    var stacks = NavigationStacks(places: entries)
+    var current = place("Fresh snapshot"); current.window = entries[2].window
+    try stacks.save(current, replacing: [entries[2].id])
+    #expect(stacks.ordered.map(\.id) == entries.map(\.id))
+    #expect(stacks.ordered[2].regionName == "Fresh snapshot")
+    let before = stacks.ordered
+    #expect(throws: (any Error).self) { try stacks.save(place("Sixth"), replacing: [UUID()]) }
+    #expect(stacks.ordered == before)
+}
+
+@Test func savedPaneBoundsIdentifyChangingContentButKeepNestedPanesDistinct() {
+    let anchors = [StackAnchor(role: "AXButton", name: "Play", x: 0.5, y: 0.9)]
+    let bounds = StackRegionBounds(x: 0.3, y: 0.7, width: 0.7, height: 0.3)
+    let saved = StackRegion(anchors: anchors, bounds: bounds)
+    let changed = StackRegion(anchors: [.init(role: "AXButton", name: "Pause", x: 0.5, y: 0.9)], bounds: bounds)
+    #expect(saved.sameSavedRegion(as: changed, sameName: true))
+    // Similar contents in a nested pane do not make it the same saved place.
+    let nested = StackRegion(anchors: anchors, bounds: .init(x: 0.3, y: 0.85, width: 0.7, height: 0.15))
+    #expect(!saved.sameSavedRegion(as: nested, sameName: true))
+    #expect(saved.similarity(to: changed) == nil) // Recall still needs semantic confidence.
+}
+
+@Test func legacyPaneSaveRequiresStableControlsAtTheSamePositionsWhenContentChanges() {
+    let stable = (0..<3).map { StackAnchor(role: "AXButton", name: "Playback \($0)", x: 0.3 + Double($0) * 0.1, y: 0.9) }
+    let dynamic = (0..<8).map { StackAnchor(role: "AXButton", name: "Track \($0)", x: 0.5, y: 0.8) }
+    let old = StackRegion(anchors: stable + dynamic)
+    let changed = StackRegion(anchors: stable + [.init(role: "AXButton", name: "New track", x: 0.5, y: 0.8)])
+    #expect(old.sameSavedRegion(as: changed, sameName: true))
+    #expect(!old.sameSavedRegion(as: changed, sameName: false))
+    let moved = StackRegion(anchors: stable.map { .init(role: $0.role, name: $0.name, x: $0.x, y: $0.y - 0.1) })
+    #expect(!old.sameSavedRegion(as: moved, sameName: true))
+    #expect(!old.sameSavedRegion(as: .init(anchors: Array(stable.prefix(2))), sameName: true))
+}
 @Test func fiveNumericPickerSlotsRenumberImmediatelyAfterRemoval() {
     let entries = (0..<8).map { place("Window \($0)") }
     var picker = StackPickerState(entries: entries)

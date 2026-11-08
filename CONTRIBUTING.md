@@ -80,6 +80,14 @@ only captures input during hints or the picker. All three shortcuts must differ.
 
 Persist all saved places in `[stacks]` / `[[stacks.places]]` in `config.toml`.
 Keep insertion order; updating or recalling a place must not move its slot.
+Saving the same window or pane updates its earliest existing slot, including
+after restart, and consolidates confirmed duplicates on that explicit Save.
+Match the actual live window first, or a unique persisted window identity after
+restart. Store pane bounds relative to its window so changing content does not
+create a new place. Different nested pane bounds remain separate; legacy saves
+without bounds require semantic agreement. Never merge ambiguous windows or
+delete places automatically on load. Recall still requires semantic anchors;
+matching bounds alone does not prove a saved control region can be restored.
 Never evict an entry to make room: a sixth save explains that one must be removed.
 Preserve existing entries when upgrading; only the user removes them. The legacy
 `pinned` field stays compatible, but there is no automatic Recent list or
@@ -302,8 +310,12 @@ OpenSesame design choices; they need rendered and live usability checks.
   exposed tab-group header only after checking its live role, parent, owner,
   bounds, and Accessibility hit target. A coarse hit result is acceptable only
   for a real AXGroup/AXTabGroup/AXToolbar ancestor owned by the same process,
-  containing the entire header, and belonging to the same AXWindow. An unrelated
-  same-app element is not sufficient. This is a target-role exception, not an
+  containing the entire header, and belonging to the same AXWindow. Resolve
+  window identity through parent links when `AXWindow` is absent. A separate
+  native AXGroup host may also qualify only when its bounds match that entire
+  same window. A smaller unrelated same-app group is not sufficient. Record
+  the accepted relationship or bounded ancestry diagnostics when rejecting it.
+  This is a target-role exception, not an
   app-specific layout or a general click fallback. A generic tab container is
   not a selectable header. Prefer an advertised
   primary press/open action over a context menu; never discard a usable `AXOpen`.
@@ -349,6 +361,9 @@ OpenSesame design choices; they need rendered and live usability checks.
   app-change notifications, but invalidate pending work on cancellation. Verify
   owner and focused window again before displaying results. This applies to every
   app, including terminals; selecting a window never requires a second hotkey.
+  Keep that app's menu bar and configured menu extras available in the fresh
+  scan, including windows without eligible content controls. Do not substitute
+  another window's tabs or controls for an empty selected window.
   On fresh hints, include exposed desktop items even when Finder is not active.
   Identify the desktop by Finder's desktop-icon WindowServer surface, not its
   localized title. Subtract normal application windows from desktop icon bounds and obey app
@@ -555,6 +570,8 @@ version control and redact private titles before sharing.
 
 Create a branch before committing. Never commit directly to `main`. Agents must
 not commit unless explicitly asked; pushing requires separate instruction.
+Use short names such as `feat/accessible-keyboard-navigation`, without usernames
+or personal prefixes.
 Use [Conventional Commits](https://conventionalcommits.org), for example:
 
 ```text

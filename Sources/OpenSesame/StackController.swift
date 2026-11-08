@@ -5,6 +5,7 @@ import OpenSesameCore
 struct StackCandidate {
     let place: NavigationPlace
     let live: StackWindowResolver.LiveWindow
+    var duplicateIDs: [UUID] = []
 }
 
 extension Controller {
@@ -26,38 +27,44 @@ extension Controller {
               let app = NSRunningApplication(processIdentifier: owner), let bundleID = app.bundleIdentifier,
               !sectionNavigation.targets.isEmpty, !sectionNavigation.isChoosingTabs else { return nil }
         let region = sectionNavigation.depth > 0 ? sectionNavigation.anchor(in: window.frame) : nil
-        // Match a session's actual window, not just its potentially duplicated title.
-        let sameWindow = stacks.places.filter { place in
-            guard let live = liveStackWindows[place.id], live.owner == owner,
-                  CFEqual(live.element, window.element) else { return false }
-            return true
-        }
-        let existing: UUID?
-        if let restoredPlaceID { existing = restoredPlaceID }
-        else if let region {
-            let regions = sameWindow.filter { $0.region != nil }
-            existing = region.uniqueMatch(in: regions.compactMap(\.region)).map { regions[$0].id }
-        } else { existing = sameWindow.first { $0.region == nil }?.id }
-        let id = existing ?? UUID()
+        let axApp = AXUIElementCreateApplication(owner)
+        AXUIElementSetMessagingTimeout(axApp, 0.08)
+        let windows = attribute(axApp, kAXWindowsAttribute) as? [AXUIElement] ?? []
+        let sameWindow = StackWindowResolver.matchingPlaces(stacks.places, current: .init(owner: owner, element: window.element),
+            live: liveStackWindows, windows: windows, describe: { element in
+                StackWindow(bundleID: bundleID, title: attribute(element, kAXTitleAttribute) as? String ?? "",
+                            identifier: attribute(element, kAXIdentifierAttribute) as? String ?? "")
+            })
         let names = sectionNavigation.regionTargets.compactMap { target -> String? in
             let name = target.metadata.title.isEmpty ? target.metadata.description : target.metadata.title
             return name.isEmpty ? nil : name
         }
         let regionName = sectionNavigation.depth == 0 ? "Window" :
             (names.count <= 3 && !names.isEmpty ? names.joined(separator: " · ") : sectionNavigation.regionDescription(in: window.frame))
+        let matching = sameWindow.filter { saved in
+            if saved.id == restoredPlaceID { return true }
+            switch (region, saved.region) {
+            case (nil, nil): return true
+            case let (current?, previous?): return current.sameSavedRegion(as: previous, sameName: saved.regionName == regionName)
+            default: return false
+            }
+        }
+        let id = matching.first?.id ?? UUID()
         let place = NavigationPlace(id: id,
             window: StackWindow(bundleID: bundleID, title: window.title, identifier: window.identifier),
             appName: app.localizedName ?? bundleID, regionName: regionName, region: region)
-        return StackCandidate(place: place, live: .init(owner: owner, element: window.element))
+        return StackCandidate(place: place, live: .init(owner: owner, element: window.element), duplicateIDs: matching.map(\.id))
     }
 
-    func saveStack(_ candidate: StackCandidate) throws {
+    func saveStack(_ candidate: StackCandidate) throws -> UUID {
         var updated = stacks
-        try updated.save(candidate.place)
+        let savedID = try updated.save(candidate.place, replacing: candidate.duplicateIDs)
         try persistStacks(updated)
         stacks = updated
-        liveStackWindows[candidate.place.id] = candidate.live
+        liveStackWindows = liveStackWindows.filter { id, _ in updated.places.contains { $0.id == id } }
+        liveStackWindows[savedID] = candidate.live
         stackRemovalUndo = nil
+        return savedID
     }
     func saveCurrentStack() {
         guard enabled, trusted, configurationValid else { return }
@@ -65,10 +72,10 @@ extension Controller {
             showStacks(notice: "Open hints in a window and choose the section you want to save first."); return
         }
         do {
-            try saveStack(candidate)
+            let savedID = try saveStack(candidate)
             showStacks(notice: "Saved \(candidate.place.appName) · \(candidate.place.regionName).")
             stackCandidate = nil
-            stackPicker?.selected = candidate.place.id
+            stackPicker?.selected = savedID
         } catch {
             showStacks(notice: "Could not save stack: \(error.localizedDescription)")
             stackCandidate = candidate

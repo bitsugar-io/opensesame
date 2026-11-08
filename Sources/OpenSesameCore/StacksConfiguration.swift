@@ -17,21 +17,23 @@ public struct StacksConfiguration: Equatable, Decodable {
     private struct SavedPlace: Decodable {
         let place: NavigationPlace
         enum CodingKeys: String, CodingKey {
-            case id, window, anchors, pinned
+            case id, window, anchors, bounds, pinned
             case appName = "app_name", regionName = "region_name", lastVisited = "last_visited"
         }
         init(from decoder: Decoder) throws {
-            try checkKeys(decoder, allowed: ["id", "window", "anchors", "pinned", "app_name", "region_name", "last_visited"])
+            try checkKeys(decoder, allowed: ["id", "window", "anchors", "bounds", "pinned", "app_name", "region_name", "last_visited"])
             let c = try decoder.container(keyedBy: CodingKeys.self)
             let idText = try c.decode(String.self, forKey: .id)
             guard let id = UUID(uuidString: idText) else { throw ConfigurationError.invalid("A stack id must be a UUID.") }
             let window = try c.decode(StackWindow.self, forKey: .window)
             let anchors = try c.decodeIfPresent([StackAnchor].self, forKey: .anchors)
+            let bounds = try c.decodeIfPresent(StackRegionBounds.self, forKey: .bounds)
+            guard bounds?.isValid != false, bounds == nil || anchors != nil else { throw ConfigurationError.invalid("Invalid saved stack region bounds.") }
             let date = try c.decode(Double.self, forKey: .lastVisited)
             guard !window.bundleID.isEmpty, date.isFinite, (anchors?.count ?? 0) <= 128,
                   anchors?.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) != false else { throw ConfigurationError.invalid("Invalid saved stack identity or anchors.") }
             place = NavigationPlace(id: id, window: window, appName: try c.decode(String.self, forKey: .appName),
-                regionName: try c.decode(String.self, forKey: .regionName), region: anchors.map { StackRegion(anchors: $0) },
+                regionName: try c.decode(String.self, forKey: .regionName), region: anchors.map { StackRegion(anchors: $0, bounds: bounds) },
                 pinned: try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false, lastVisited: Date(timeIntervalSince1970: date))
         }
     }
@@ -53,6 +55,7 @@ public struct StacksConfiguration: Equatable, Decodable {
 
             """
             if let region = place.region {
+                if let b = region.bounds { result += "bounds = { x = \(b.x), y = \(b.y), width = \(b.width), height = \(b.height) }\n" }
                 let anchors = try region.anchors.map {
                     "{ role = \(try q($0.role)), identifier = \(try q($0.identifier)), name = \(try q($0.name)), x = \($0.x), y = \($0.y) }"
                 }

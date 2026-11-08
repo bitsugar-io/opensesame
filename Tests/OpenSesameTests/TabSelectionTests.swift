@@ -32,11 +32,12 @@ import OpenSesameCore
     #expect(navigation.targets.count == 3 && navigation.isChoosingTabs)
 }
 
-@Test func groupHitTestingAcceptsOnlyRelatedElementsInTheSameWindow() {
+@Test func groupHitTestingRequiresARelatedElementOrTheSameWholeWindowHost() {
     let target = AXUIElementCreateApplication(1), container = AXUIElementCreateApplication(2)
     let window = AXUIElementCreateApplication(3), child = AXUIElementCreateApplication(4)
-    let unrelated = AXUIElementCreateApplication(5)
+    let unrelated = AXUIElementCreateApplication(5), host = AXUIElementCreateApplication(6)
     let header = CGRect(x: 80, y: 40, width: 90, height: 32)
+    let windowFrame = CGRect(x: 0, y: 0, width: 600, height: 500)
     func read(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
         if key == kAXRoleAttribute { return "AXGroup" as CFString }
         if key == kAXWindowAttribute { return window }
@@ -46,17 +47,22 @@ import OpenSesameCore
         }
         return nil
     }
-    func relationship(_ hit: AXUIElement, owner: pid_t = 42, frame: CGRect = CGRect(x: 0, y: 0, width: 600, height: 500), wrongWindow: Bool = false) -> String? {
+    func relationship(_ hit: AXUIElement, owner: pid_t = 42, frame: CGRect = CGRect(x: 0, y: 0, width: 600, height: 80), wrongWindow: Bool = false) -> String? {
         TabSelection.hitRelationship(target: target, hit: hit, frame: header, owner: 42,
             read: { element, key in
-                if wrongWindow && CFEqual(element, container) && key == kAXWindowAttribute { return unrelated }
+                if wrongWindow && CFEqual(element, hit) && key == kAXWindowAttribute { return unrelated }
                 return read(element, key)
-            }, getFrame: { _ in frame }, getOwner: { _ in owner })
+            }, getFrame: { element in
+                CFEqual(element, window) || CFEqual(element, host) ? windowFrame : frame
+            }, getOwner: { _ in owner })
     }
     #expect(relationship(target) == "target")
     #expect(relationship(child) == "descendant")
     #expect(relationship(container) == "ancestor")
     #expect(relationship(unrelated) == nil)
+    #expect(relationship(host) == "window-container")
+    #expect(relationship(host, wrongWindow: true) == nil)
+    #expect(relationship(host, owner: 99) == nil)
     #expect(relationship(container, owner: 99) == nil)
     #expect(relationship(container, frame: CGRect(x: 0, y: 0, width: 10, height: 10)) == nil)
     #expect(relationship(container, wrongWindow: true) == nil)
