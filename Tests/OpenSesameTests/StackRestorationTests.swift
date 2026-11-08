@@ -52,12 +52,15 @@ private func controls(in window: CGRect, title: String = "Action") -> [Target] {
 @Test func recallKeepsTheLeafWhenDynamicContentChangesAroundEightStableControls() {
     let window = CGRect(x: 0, y: 0, width: 1800, height: 700)
     func fixture(changed: Bool) -> [Target] {
-        (0..<78).compactMap { index in
+        (0..<78).compactMap { index -> Target? in
             let cluster = index / 13, item = index % 13
             if changed && cluster == 4 && item == 12 { return nil }
             let name = changed && cluster == 4 && item >= 8 ? "Changed \(index)" : "Action \(index)"
+            let x = CGFloat(40 + (cluster % 3) * 600 + (item % 5) * 30)
+            let y = CGFloat(40 + (cluster / 3) * 320 + (item / 5) * 30)
+            let frame = CGRect(x: x, y: y, width: 24, height: 24)
             return Target(element: AXUIElementCreateApplication(0),
-                frame: CGRect(x: 40 + cluster % 3 * 600 + item % 5 * 30, y: 40 + cluster / 3 * 320 + item / 5 * 30, width: 24, height: 24),
+                frame: frame,
                 label: "old\(index)", kind: .control, action: "AXPress", clicksMenuBarExtra: false,
                 metadata: TargetMetadata(role: "AXButton", subrole: "", title: name, description: "", owner: 0, bundleID: "test"))
         }

@@ -51,6 +51,7 @@ enum DevelopmentPreviews {
         try StackPickerPreview.render(to: directory)
         try ContainerSelectionPreview.render(to: directory)
         try OverflowPlacementPreview.render(to: directory)
+        try TabGroupPreview.render(to: directory)
         try DesktopStackPreview.render(to: directory)
     }
 }

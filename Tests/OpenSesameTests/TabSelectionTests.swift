@@ -32,7 +32,7 @@ import OpenSesameCore
     #expect(navigation.targets.count == 3 && navigation.isChoosingTabs)
 }
 
-@Test func groupHitTestingRequiresARelatedElementOrTheSameWholeWindowHost() {
+@Test func groupHitTestingRejectsUnrelatedSameWindowElements() {
     let target = AXUIElementCreateApplication(1), container = AXUIElementCreateApplication(2)
     let window = AXUIElementCreateApplication(3), child = AXUIElementCreateApplication(4)
     let unrelated = AXUIElementCreateApplication(5), host = AXUIElementCreateApplication(6)
@@ -60,10 +60,39 @@ import OpenSesameCore
     #expect(relationship(child) == "descendant")
     #expect(relationship(container) == "ancestor")
     #expect(relationship(unrelated) == nil)
-    #expect(relationship(host) == "window-container")
+    #expect(relationship(host) == nil)
     #expect(relationship(host, wrongWindow: true) == nil)
     #expect(relationship(host, owner: 99) == nil)
     #expect(relationship(container, owner: 99) == nil)
     #expect(relationship(container, frame: CGRect(x: 0, y: 0, width: 10, height: 10)) == nil)
     #expect(relationship(container, wrongWindow: true) == nil)
+}
+
+@Test func tabGroupHitTestingAcceptsOnlyTheSiblingHostOfItsActualTabStrip() {
+    let header = AXUIElementCreateApplication(1), strip = AXUIElementCreateApplication(2)
+    let host = AXUIElementCreateApplication(3), parent = AXUIElementCreateApplication(4)
+    let window = AXUIElementCreateApplication(5), unrelated = AXUIElementCreateApplication(6)
+    let headerFrame = CGRect(x: 520, y: 90, width: 98, height: 41)
+    let stripFrame = CGRect(x: 110, y: 90, width: 2535, height: 41)
+    func relationship(wrongParent: Bool = false, wrongFrame: Bool = false, wrongWindow: Bool = false, owner: pid_t = 42) -> String? {
+        TabSelection.hitRelationship(target: header, hit: host, frame: headerFrame, owner: 42, read: { element, key in
+            if key == kAXRoleAttribute { return (CFEqual(element, header) || CFEqual(element, strip) ? "AXTabGroup" : "AXGroup") as CFString }
+            if key == kAXWindowAttribute { return wrongWindow && CFEqual(element, host) ? unrelated : window }
+            if key == kAXParentAttribute {
+                if CFEqual(element, header) { return strip }
+                if CFEqual(element, strip) { return parent }
+                if CFEqual(element, host) { return wrongParent ? unrelated : parent }
+                if CFEqual(element, parent) { return window }
+            }
+            return nil
+        }, getFrame: { element in
+            if CFEqual(element, header) { return headerFrame }
+            return wrongFrame && CFEqual(element, host) ? stripFrame.insetBy(dx: -20, dy: 0) : stripFrame
+        }, getOwner: { _ in owner })
+    }
+    #expect(relationship() == "tab-strip-host")
+    #expect(relationship(wrongParent: true) == nil)
+    #expect(relationship(wrongFrame: true) == nil)
+    #expect(relationship(wrongWindow: true) == nil)
+    #expect(relationship(owner: 99) == nil)
 }

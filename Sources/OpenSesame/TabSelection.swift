@@ -25,11 +25,19 @@ enum TabSelection {
               let targetWindow = AccessibilityTraversal.window(of: target, read: read),
               let hitWindow = AccessibilityTraversal.window(of: hit, read: read), CFEqual(targetWindow, hitWindow) else { return nil }
         if isAncestor(hit, of: target, maximumDepth: 16, read: read) { return "ancestor" }
-        // A same-window sibling is insufficient. Only a window-sized host
-        // group can stand in for the entire native hit-test surface.
+        // Some native tab strips hit-test a sibling host instead of the AX
+        // tab tree. The live trace shows both branches under the same parent,
+        // with the host covering exactly the tab strip, not the whole window.
         guard read(hit, kAXRoleAttribute) as? String == "AXGroup",
-              let windowFrame = getFrame(targetWindow), TargetGeometry.isStable(previous: windowFrame, current: hitFrame) else { return nil }
-        return "window-container"
+              read(target, kAXRoleAttribute) as? String == "AXTabGroup",
+              let stripValue = read(target, kAXParentAttribute), CFGetTypeID(stripValue) == AXUIElementGetTypeID() else { return nil }
+        let strip = stripValue as! AXUIElement
+        guard read(strip, kAXRoleAttribute) as? String == "AXTabGroup",
+              let stripFrame = getFrame(strip), TargetGeometry.isStable(previous: stripFrame, current: hitFrame),
+              let stripParent = read(strip, kAXParentAttribute), CFGetTypeID(stripParent) == AXUIElementGetTypeID(),
+              let hitParent = read(hit, kAXParentAttribute), CFGetTypeID(hitParent) == AXUIElementGetTypeID(),
+              CFEqual(stripParent, hitParent) else { return nil }
+        return "tab-strip-host"
     }
     static func hitDiagnostics(target: AXUIElement, hit: AXUIElement) -> [String: Any] {
         let deadline = Date().addingTimeInterval(0.25)

@@ -21,6 +21,25 @@ struct HintCanvasTests {
         let bitmap = try #require(canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds))
         canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
     }
+    @Test func groupRowsKeepTheirNameStateAndSemanticColorWhileFiltering() throws {
+        let view = canvas()
+        view.appName = "Browser"
+        let raw = " group Hardware - 7 Tabs, • Long website title - Collapsed"
+        view.targets = [
+            target("sg", CGRect(x: 200, y: 200, width: 8, height: 8), kind: .tab, role: "AXTabGroup", title: raw),
+            target("st", CGRect(x: 300, y: 200, width: 8, height: 8), kind: .tab, role: "AXTab", title: raw)
+        ]
+        try render(view)
+        #expect(view.ledgerCaptions == ["sg": "Hardware", "st": raw])
+        #expect(view.ledgerGroupDetails == ["sg": "7 tabs · Collapsed"])
+        let panel = view.ledgerPanelFrame, accents = view.drawnAccents
+        view.prefix = "sg"
+        try render(view)
+        #expect(view.ledgerPanelFrame == panel)
+        #expect(view.ledgerCaptions == ["sg": "Hardware"])
+        #expect(view.ledgerGroupDetails == ["sg": "7 tabs · Collapsed"])
+        #expect(view.drawnAccents == ["sg": accents["sg"]!])
+    }
     @Test func menuBarNamesDoNotChangeTargetOutlinePolicy() throws {
         let view = canvas()
         view.targets = [
@@ -97,9 +116,12 @@ struct HintCanvasTests {
 
     @Test func regionCodesStayCenteredAndKeepMatchingColorsInOverflowAndFiltering() throws {
         let view = canvas()
-        view.targets = (0..<4).map { index in
-            target(["aa", "ab", "ba", "bb"][index], CGRect(x: 80 + index % 2 * 450, y: 100 + index / 2 * 240, width: 300, height: 140),
-                   role: "OpenSesameSection", title: "Region \(index + 1)")
+        view.targets = (0..<4).map { index -> Target in
+            let x = CGFloat(80 + (index % 2) * 450)
+            let y = CGFloat(100 + (index / 2) * 240)
+            let frame = CGRect(x: x, y: y, width: 300, height: 140)
+            return target(["aa", "ab", "ba", "bb"][index], frame,
+                          role: "OpenSesameSection", title: "Region \(index + 1)")
         }
         // Text and controls may fill a pane. The region code deliberately
         // overlays its center rather than searching for an exterior caption.

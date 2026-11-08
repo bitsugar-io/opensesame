@@ -39,6 +39,7 @@ final class HintCanvas: NSView {
     private(set) var ledgerPageCount = 0
     private(set) var ledgerSourceKey = ""
     private(set) var ledgerCaptions: [String: String] = [:]
+    private(set) var ledgerGroupDetails: [String: String] = [:]
     private func isRegion(_ target: Target) -> Bool { target.kind == .window || target.metadata.role == "OpenSesameSection" }
     private func local(_ frame: CGRect) -> CGRect {
         CGRect(x: frame.minX - screenFrame.minX, y: desktopTop - frame.maxY - screenFrame.minY, width: frame.width, height: frame.height)
@@ -81,7 +82,7 @@ final class HintCanvas: NSView {
         drawnLabels.removeAll()
         localBadgeFrames.removeAll()
         usesLedger = false
-        ledgerHeading = ""; ledgerCaptions = [:]; ledgerPageCount = 0; ledgerSourceKey = ""
+        ledgerHeading = ""; ledgerCaptions = [:]; ledgerGroupDetails = [:]; ledgerPageCount = 0; ledgerSourceKey = ""
         ledgerPanelFrame = nil
         associatedLabels.removeAll()
         localLabels.removeAll(); overflowLabels.removeAll()
@@ -422,14 +423,33 @@ final class HintCanvas: NSView {
             if !prefix.isEmpty { code.addAttribute(.foregroundColor, value: NSColor(rgb: colors.typed), range: NSRange(location: 0, length: min(prefix.count, target.label.count))) }
             let centerY = origin.y + rowHeight / 2
             code.draw(at: CGPoint(x: origin.x, y: centerY - code.size().height / 2))
-            let caption = TargetPresentation.caption(target)
+            let group = TargetPresentation.tabGroup(target)
+            let caption = group?.title ?? TargetPresentation.caption(target)
             ledgerCaptions[target.label] = caption
-            TargetPresentation.icon(target, foreground: NSColor(rgb: palette.text)).draw(in: CGRect(x: origin.x + codeWidth, y: centerY - 8, width: 16, height: 16))
+            let iconSize: CGFloat = group == nil ? 16 : 20
+            let iconColor = NSColor(rgb: group == nil ? palette.text : color)
+            TargetPresentation.icon(target, foreground: iconColor).draw(in:
+                CGRect(x: origin.x + codeWidth + (16 - iconSize) / 2, y: centerY - iconSize / 2, width: iconSize, height: iconSize))
+            let textWidth = columnWidth - codeWidth - 48
+            let textX = origin.x + codeWidth + 24
+            if let group {
+                ledgerGroupDetails[target.label] = group.detail
+                let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail
+                let titleFont = NSFont.systemFont(ofSize: max(13, fontSize - 1), weight: .semibold)
+                let detailFont = NSFont.systemFont(ofSize: max(11, fontSize - 4))
+                let titleHeight = ceil(titleFont.ascender - titleFont.descender + titleFont.leading)
+                let detailHeight = ceil(detailFont.ascender - detailFont.descender + detailFont.leading)
+                let bottom = centerY - (titleHeight + detailHeight + 2) / 2
+                (caption as NSString).draw(in: CGRect(x: textX, y: bottom + detailHeight + 2, width: textWidth, height: titleHeight),
+                    withAttributes: [.font: titleFont, .foregroundColor: NSColor(rgb: palette.text), .paragraphStyle: style])
+                (group.detail as NSString).draw(in: CGRect(x: textX, y: bottom, width: textWidth, height: detailHeight),
+                    withAttributes: [.font: detailFont, .foregroundColor: NSColor(rgb: palette.text).withAlphaComponent(0.8), .paragraphStyle: style])
+                continue
+            }
             let style = NSMutableParagraphStyle(); style.lineBreakMode = .byWordWrapping
             let text = NSAttributedString(string: caption, attributes: [.font: NSFont.systemFont(ofSize: max(12, fontSize - 2)), .foregroundColor: NSColor(rgb: palette.text), .paragraphStyle: style])
-            let textWidth = columnWidth - codeWidth - 48
             let textHeight = min(rowHeight - 8, ceil(text.boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin]).height))
-            text.draw(with: CGRect(x: origin.x + codeWidth + 24, y: centerY - textHeight / 2, width: textWidth, height: textHeight),
+            text.draw(with: CGRect(x: textX, y: centerY - textHeight / 2, width: textWidth, height: textHeight),
                       options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
         let footer = count > 1 ? "Page \(number + 1)/\(count) · ⇥ next · ⇧⇥ back"

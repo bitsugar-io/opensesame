@@ -274,7 +274,13 @@ do not add a second renderer or an app-specific visual workaround.
   collisions against every source's unfiltered panel before typing so codes do
   not jump when the visible page changes. Membership, icons, and source labels
   remain stable while typing. Put the owner in the heading once; tab/window/object
-  rows prefer their title and allow two lines at the configured readable size. The optional Chrome
+  rows prefer their title and allow two lines at the configured readable size.
+  Tab-group rows emphasize the group name with a filled 20-point group icon and
+  a semibold title. Put count and expanded/collapsed state on a separate line
+  when the provider supplies a recognized summary; preserve unfamiliar labels.
+  Keep the tab color family, code sizing, source separation, and placement rules.
+  Spoken-label parsing is presentation only and must never choose an action.
+  The optional Chrome
   icon adapter supplies metadata only, never activation or placement behavior.
   It is disabled by default, requests Automation only on an explicit settings
   action, reads authoritative tab URLs for a uniquely matched non-incognito
@@ -312,8 +318,11 @@ OpenSesame design choices; they need rendered and live usability checks.
   for a real AXGroup/AXTabGroup/AXToolbar ancestor owned by the same process,
   containing the entire header, and belonging to the same AXWindow. Resolve
   window identity through parent links when `AXWindow` is absent. A separate
-  native AXGroup host may also qualify only when its bounds match that entire
-  same window. A smaller unrelated same-app group is not sufficient. Record
+  native AXGroup host may also qualify only when it is a sibling of the header's
+  AXTabGroup strip under the same parent and its bounds match that strip.
+  An unrelated same-app or whole-window group is not sufficient. The November 7
+  Chrome trace exposed this sibling host for a collapsed group before any click
+  was sent. Keep the sanitized sibling-host regression fixture provider-neutral. Record
   the accepted relationship or bounded ancestry diagnostics when rejecting it.
   This is a target-role exception, not an
   app-specific layout or a general click fallback. A generic tab container is
@@ -545,6 +554,8 @@ pages in both appearances; `overflow-{right,left,inside}-*` verifies shared
 placement for browser and terminal providers. `desktop-stack-*` renders
 expanded/collapsed synthetic groups and individual
 file tags through the same corner-placement policy in both appearances.
+`tab-groups-*` renders group names, counts, and disclosure state alongside ordinary
+tabs at all three hint sizes, with identical placement for browser/native providers.
 
 The README labels live captures separately from synthetic examples. Crop live
 captures to the relevant UI and exclude private app content; keep full desktop

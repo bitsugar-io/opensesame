@@ -1,6 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 import ImageIO
+import OpenSesameCore
 
 /// Shared local app identity for overflow panels and saved places. No network
 /// requests or screen captures are needed to decorate a navigation choice.
@@ -27,6 +28,12 @@ enum AppIdentity {
 }
 
 enum TargetPresentation {
+    static func isTabGroup(_ target: Target) -> Bool {
+        target.kind == .tab && target.metadata.role == "AXTabGroup"
+    }
+    static func tabGroup(_ target: Target) -> TabGroupCaption? {
+        isTabGroup(target) ? TabGroupCaption(caption(target)) : nil
+    }
     static func sourceKey(_ target: Target) -> String {
         target.kind == .desktop ? "desktop" : "\(target.metadata.bundleID):\(target.metadata.owner)"
     }
@@ -45,6 +52,9 @@ enum TargetPresentation {
         return name.isEmpty || name == "preview" ? fallback : name
     }
     static func icon(_ target: Target, foreground: NSColor) -> NSImage {
+        if isTabGroup(target), let image = NSImage(systemSymbolName: "rectangle.stack.fill", accessibilityDescription: nil) {
+            return image.withSymbolConfiguration(.init(paletteColors: [foreground])) ?? image
+        }
         if let data = target.metadata.iconData, data.count <= 262144,
            let source = CGImageSourceCreateWithData(data as CFData, nil),
            let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
