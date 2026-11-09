@@ -22,30 +22,27 @@ I built this for myself because I wanted Vimium-style keyboard hints across
 my Mac, including Ghostty tabs, separate windows, and the menu bar, with a
 hotkey and hint size I could tune from the menu bar.
 
+OpenSesame now uses one navigation flow across apps: choose a window, narrow a
+busy view into up to three sections, then select a control. Large selectors use
+the original block lettering; compact tags keep colors by type. Save up to five
+places when you want to return quickly.
+
 <table align="center">
   <tr>
-    <td align="center" width="50%"><a href="asset/settings-hints.png"><img src="asset/settings-hints.png" width="100%" alt="OpenSesame configuration with shortcut recording and hint size presets"></a></td>
-    <td align="center" width="50%"><a href="asset/settings-style.png"><img src="asset/settings-style.png" width="100%" alt="OpenSesame Style configuration with appearance and palette choices"></a></td>
+    <td align="center" width="50%"><a href="asset/layout-window-selection-light.png"><img src="asset/layout-window-selection-light.png" height="220" alt="Illustrated window selection with block-letter codes on exposed windows and compact hints inside the active window's tabs"></a></td>
+    <td align="center" width="50%"><a href="asset/screenshots/spotify-sections.png"><img src="asset/screenshots/spotify-sections.png" height="220" alt="Three Spotify regions, with the bottom purple region including playback controls"></a></td>
   </tr>
   <tr>
-    <td align="center"><sub>Configuration</sub></td>
-    <td align="center"><sub>Style</sub></td>
+    <td align="center"><sub>Choose a window · rendered example</sub></td>
+    <td align="center"><sub>Choose a section · cropped live capture</sub></td>
   </tr>
   <tr>
-    <td align="center"><a href="asset/live-app-menus.png"><img src="asset/live-app-menus.png" width="100%" alt="Live Finder app menus with pink and violet keyboard hints"></a></td>
-    <td align="center"><a href="asset/live-menu-bar.png"><img src="asset/live-menu-bar.png" width="100%" alt="Live menu bar extras with hint labels and vertical connectors"></a></td>
+    <td align="center"><a href="asset/stacks-places-dark.png"><img src="asset/stacks-places-dark.png" height="220" alt="Numbered saved places in the stacks picker"></a></td>
+    <td align="center"><a href="asset/settings-hints.png"><img src="asset/settings-hints.png" height="220" alt="OpenSesame hint shortcut and size settings"></a></td>
   </tr>
   <tr>
-    <td align="center"><sub>App menus · live capture</sub></td>
-    <td align="center"><sub>Menu bar extras · live capture</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="asset/live-window-tabs.png"><img src="asset/live-window-tabs.png" width="250" alt="Live Ghostty gold window hint and teal tab hint"></a></td>
-    <td align="center"><a href="asset/detail-duration-row.png"><img src="asset/detail-duration-row.png" width="100%" alt="Captioned duration hints rendered over synthetic controls"></a></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Ghostty windows and tabs · live capture</sub></td>
-    <td align="center"><sub>Duration controls · rendered example</sub></td>
+    <td align="center"><sub>Return to a saved place · rendered example</sub></td>
+    <td align="center"><sub>Tune the shortcuts · rendered settings</sub></td>
   </tr>
 </table>
 
@@ -54,19 +51,21 @@ hotkey and hint size I could tune from the menu bar.
 | Feature | What it does |
 | --- | --- |
 | Keyboard hints | Press one hotkey, then type a label to activate an accessible control. |
-| Menu access | Include app menus and optional menu bar extras. Hints follow menus and popups opened through a selection. |
-| Tab and window switching | Teal hints select tabs; gold hints select other visible windows of the same app. Selecting either ends hint mode so you can type. |
-| Configurable hint size | Adjust text and badge size using the snapping slider or Compact, Default, and Large presets. |
-| Hint letters | Choose the alphabet, code length, and optional prefix. Two letters is the default. |
-| Crowded controls | Choose a section first in dense windows. Controls that cannot fit locally remain reachable in a paged panel. |
-| App filters | Allow only selected apps or exclude specific apps, using names or bundle IDs. |
-| Appearance | Choose Glitch, Catppuccin, Tokyo Night, Gruvbox, Dracula, or custom colors. Follow the system appearance or choose light or dark. |
-| Saved preferences | Settings are saved to TOML. Open the file or reload edits from the menu bar panel. |
+| Window selection | Block codes and colored borders select exposed windows across allowed apps, then reveal fresh hints in the chosen window. |
+| Sections | Crowded views offer at most three regions per level. Select one to narrow its controls; Backspace restores the parent. |
+| Tabs and groups | Current-window tabs have inline hints where they fit. Selecting a tab reveals its contents; Backspace returns to tab choices. Group headers use their primary selection action. |
+| Menus and popups | Include app menus and optional menu bar extras. Hints refresh after menus open or hidden menu bar items expand. |
+| Readable overflow | A paged panel keeps crowded choices reachable, with one source per page, local icons, and room for two-line titles. Desktop items never enter an app's list. |
+| Desktop items | Gold corner tags identify exposed desktop files and expandable groups, even when Finder is inactive. |
+| Saved stacks | Explicitly save up to five windows or sections, then recall them with 1–5. Places persist in TOML and renumber after removal. |
+| Your keyboard | Configure shortcuts, hint size, alphabet, code length, and prefix. The default letters avoid similar-looking glyphs. |
+| Your apps and style | Filter apps; choose six themes or custom colors, with system, light, and dark appearances. Settings persist in TOML. |
 
 ## Quickstart
 
-For now, run from a checkout. Requires macOS 13+, Swift 6+ from Apple's
-[Command Line Tools](https://developer.apple.com/xcode/resources/), and
+For now, run from a checkout. The app targets macOS 13+. Development is currently
+verified with Apple Swift 6.4 from the Xcode 27
+[Command Line Tools](https://developer.apple.com/xcode/resources/), plus
 [just](https://just.systems).
 
 ```sh
@@ -81,13 +80,63 @@ just start
 
 Click outside the panel or press Escape to close it.
 
-While hints are open, Escape dismisses them and Backspace edits the code. Tab and
-Shift+Tab navigate paged panels. Command+Shift+3 takes a screenshot without hiding
-the hints. A click or scroll dismisses them; passive focus changes from HocusFocus
-do not.
+While hints are open, Escape dismisses them and Backspace edits the code or
+returns to the parent section when the code is empty. Tab and Shift+Tab navigate
+paged panels. Command+Shift+3 takes a screenshot without hiding
+the hints. A click, scroll, or activation of another app dismisses ordinary
+hints so old labels do not remain over a different window.
 
-OpenSesame relies on each app's Accessibility controls. Custom interfaces can
-expose fewer actions. Builds are ad-hoc signed and are not notarized.
+OpenSesame uses shared Accessibility discovery and action handling across apps.
+It follows roles, advertised actions, and writable disclosure state; custom
+interfaces may expose fewer controls. Window chrome such as close, minimize,
+and maximize is excluded. Builds are ad-hoc signed and are not notarized.
+
+For website icons, enable **Settings → Apps → Website icons for Chrome** and
+allow macOS Automation access. This optional adapter reads Chrome's local icon
+cache without network requests or saving tab addresses. Unavailable or ambiguous
+icons use an app/group icon instead.
+
+Chrome's tab-group hit-test handling and automatic window refresh have automated
+coverage; they still need a live recheck after loading this build. The screenshots
+illustrate layout, not proof that every app action succeeds. Finder desktop groups
+use their advertised open/press action or writable disclosure state; their live
+expand/collapse behavior also needs verification.
+
+## Saved stacks
+
+Stacks contain only places you explicitly save. Nothing is added by opening
+hints, selecting a control, leaving hints, or switching apps.
+
+1. Open hints in the window you want.
+2. Drill into the section you want to return to (or stay at the window level).
+3. Press **Control + Option + Return** to **Save stack**. The picker confirms
+   the saved app and section. You can also open stacks with **Space** while
+   hints are visible, then use its **Save** button for the displayed current place.
+
+Change **Save stack** and **Show stacks** independently in **Settings → Stacks**,
+or edit `[save_stack_shortcut]` and `[stacks_shortcut]` in `config.toml`.
+The save binding applies while hints or the picker are open; other apps keep
+that shortcut during ordinary typing.
+
+Press **Control + Option + Space** to open stacks from any app, then **1–5** to
+return to a saved place. Arrows and Return work too. Each place shows its app
+icon. Keep up to five: a sixth save asks you to remove one first. Places stay
+in order and are never automatically replaced. Saving the same place updates
+its existing slot and combines confirmed duplicates, including after restart.
+
+**Command–Backspace** or the remove button deletes the highlighted place without
+closing its window. **Command–Z** undoes the last removal while the picker is
+open. Remaining places renumber immediately from 1; undo restores their previous order.
+
+While hints are open, **Space** opens stacks, **Return** resumes the last saved
+place, and **Shift–Backspace** returns to the previous recalled stack. Plain
+Backspace edits the code or goes up one navigation level.
+
+Recall brings the saved window forward and scans fresh controls. It never
+replays a control action. A changed region falls back to the window's current
+choices; a closed or ambiguous window produces an explanation. All saved places
+persist in `[stacks]` in `config.toml`. Old `stacks.json` favorites are imported
+once, leaving the legacy file unchanged.
 
 ## Contributing
 

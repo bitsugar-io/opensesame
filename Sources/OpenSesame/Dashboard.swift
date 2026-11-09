@@ -4,7 +4,7 @@ import OpenSesameCore
 import OpenSesameBrand
 
 private let sizePresets = [(value: 12, name: "Compact"), (value: 16, name: "Default"), (value: 20, name: "Large")]
-enum DashboardPage: String, CaseIterable { case hints = "Hints", letters = "Letters", apps = "Apps", style = "Style" }
+enum DashboardPage: String, CaseIterable { case hints = "Hints", stacks = "Stacks", letters = "Letters", apps = "Apps", style = "Style" }
 
 final class DashboardDraft: ObservableObject {
     @Published var page: DashboardPage
@@ -36,6 +36,7 @@ struct Dashboard: View {
             Group {
                 switch draft.page {
                 case .hints: hintControls
+                case .stacks: stackControls
                 case .letters: letterControls
                 case .apps: applicationControls
                 case .style: styleControls
@@ -75,16 +76,16 @@ struct Dashboard: View {
                 .accessibilityLabel("OpenSesame")
             HStack {
                 Text("LESS MOUSE. MORE MAYHEM.")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1.2).foregroundStyle(.secondary)
+                    .font(.system(size: HintStyle.minimumTextSize, weight: .semibold, design: .monospaced)).tracking(1.2).foregroundStyle(.secondary)
                 Spacer()
                 HStack(spacing: 5) {
                     Circle().fill(model.trusted && model.enabled && model.configurationValid ? neon : Color.secondary)
                         .frame(width: 5, height: 5)
                     Text(!model.configurationValid ? "CONFIG" : !model.trusted ? "SETUP" : model.enabled ? "LIVE" : "PAUSED")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: HintStyle.minimumTextSize, weight: .bold, design: .monospaced))
                 }
                 .padding(.horizontal, 9).padding(.vertical, 5)
-                .background(.white.opacity(0.05), in: Capsule())
+                .background(Color(nsColor: NSColor(rgb: palette.text)).opacity(0.05), in: Capsule())
             }
         }
     }
@@ -102,7 +103,8 @@ struct Dashboard: View {
         }.buttonStyle(.plain)
     }
     private var hintControls: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        let examples = Hints.labels(count: 3, configuration: model.hintConfiguration).map { $0.uppercased() }
+        return VStack(alignment: .leading, spacing: 15) {
             Toggle(isOn: $model.enabled) {
                 Label { Text("Keyboard hints") } icon: {
                     Image(nsImage: BrandArtwork.mark(size: 18, primary: NSColor(rgb: palette.control), secondary: NSColor(rgb: palette.tab)))
@@ -118,9 +120,9 @@ struct Dashboard: View {
                 Spacer()
                 ShortcutRecorder(model: model).frame(width: 150, height: 30)
             }
-            Text("WHILE HINTS ARE OPEN").font(.system(size: 9, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+            Text("WHILE HINTS ARE OPEN").font(.system(size: HintStyle.minimumTextSize, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
             HStack(spacing: 7) {
-                key("Esc", "Dismiss"); key("⌫", "Edit code"); key("⌘ ⇧ 3", "Screenshot")
+                key("Esc", "Dismiss"); key("⌫", "Edit / back"); key("⌘ ⇧ 3", "Screenshot")
             }
             Divider()
             HStack {
@@ -128,12 +130,10 @@ struct Dashboard: View {
                 Spacer()
                 Text("\(Int(model.hintSize)) pt").font(.system(size: 18, design: .monospaced)).foregroundStyle(mint)
             }
-            HStack(spacing: 9) {
-                previewBadge("SA", color: neon, typedColor: Color(nsColor: NSColor(rgb: palette.typedControl)))
-                previewBadge("SK", color: mint, typedColor: Color(nsColor: NSColor(rgb: palette.typedTab)))
-                previewBadge("SF", color: Color(nsColor: NSColor(rgb: palette.window)), typedColor: Color(nsColor: NSColor(rgb: palette.typedTab)))
-                Spacer()
-            }
+            HintSamples(samples: [(examples[0], palette.alternate, palette.typedAlternate),
+                                  (examples[1], palette.tab, palette.typedTab),
+                                  (examples[2], palette.control, palette.typedControl)],
+                        fontSize: CGFloat(model.hintSize), background: palette.background)
             HintSizeSlider(value: $model.hintSize, presets: sizePresets.map(\.value),
                            markerColor: NSColor(rgb: palette.tab), accentColor: NSColor(rgb: palette.control), onCommit: {})
                 .frame(height: 54)
@@ -142,20 +142,58 @@ struct Dashboard: View {
                     Button { model.hintSize = Double(preset.value) } label: {
                         VStack(spacing: 3) {
                             Text(preset.name).font(.system(size: 10, weight: .medium))
-                            Text("\(preset.value) pt").font(.system(size: 9, design: .monospaced))
+                            Text("\(preset.value) pt").font(.system(size: HintStyle.minimumTextSize, design: .monospaced))
                         }.frame(maxWidth: .infinity).padding(.vertical, 7)
-                            .background(model.hintSize == Double(preset.value) ? mint.opacity(0.15) : .white.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+                            .background(model.hintSize == Double(preset.value) ? mint.opacity(0.15) : Color(nsColor: NSColor(rgb: palette.text)).opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
                             .foregroundStyle(model.hintSize == Double(preset.value) ? mint : Color.secondary)
                     }.buttonStyle(.plain)
                 }
             }
             HStack(spacing: 14) {
-                legend("Controls", color: neon); legend("Tabs", color: mint); legend("Windows", color: Color(nsColor: NSColor(rgb: palette.window)))
+                legend("Menus", color: Color(nsColor: NSColor(rgb: palette.alternate)))
+                legend("Tabs", color: mint); legend("Controls", color: neon)
             }
+            Text("WINDOWS AND SECTIONS").font(.system(size: HintStyle.minimumTextSize, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+            RegionHintSamples(codes: examples, palette: palette, fontSize: CGFloat(model.hintSize)).frame(maxWidth: .infinity)
             Divider()
             Toggle("Include menu bar extras", isOn: $model.includeMenuBar).font(.system(size: 11)).toggleStyle(.switch).controlSize(.mini)
-            Text("Hints follow what you open. Selecting a tab or window returns you to normal typing. Close and window-size controls are skipped.")
+            Text("Selecting a window reveals fresh hints. Selecting a tab refreshes its controls; Backspace returns to tabs. Close and window-size controls are skipped.")
                 .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }.card(surface: Color(nsColor: NSColor(rgb: palette.surface)))
+    }
+    private var stackControls: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            section("STACKS", detail: "Return to a place without drilling down again.")
+            HStack {
+                Text("Show stacks").font(.system(size: 13, weight: .medium))
+                Spacer()
+                ShortcutRecorder(model: model, purpose: .stacks).frame(width: 150, height: 30)
+            }
+            HStack {
+                Text("Save stack").font(.system(size: 13, weight: .medium))
+                Spacer()
+                ShortcutRecorder(model: model, purpose: .saveStack).frame(width: 150, height: 30)
+            }
+            Text("Click the shortcut to change it. This is separate from Summon hints.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            Divider()
+            HStack {
+                Button("Show stacks") { model.showStacks() }
+                Button("Resume last") { model.resumeLastStack() }
+            }.disabled(!model.enabled || !model.trusted)
+            Text("Save only places you choose. Open hints, drill to a section, then press Save stack. Up to five places stay in your TOML file until you remove them. Press 1–5 to return; ⌘⌫ removes a place and ⌘Z undoes removal.")
+                .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+            Text("WHILE HINTS ARE OPEN").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(model.saveStackShortcut.display) · Save this place")
+                Text("Space · Show stacks")
+                Text("Return · Resume last place")
+                Text("Shift–Backspace · Previous place")
+                Text("Backspace · Parent section / edit code")
+            }.font(.system(size: 12))
+            Divider()
+            Text("Returning brings the window forward and refreshes its controls. It never presses a saved control. If the region changed, you get the window’s current choices.")
+                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.card(surface: Color(nsColor: NSColor(rgb: palette.surface)))
     }
     private var styleControls: some View {
@@ -188,7 +226,7 @@ struct Dashboard: View {
                 Text("Editing the \(dark ? "dark" : "light") variant. Switch appearance to edit the other.")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                 ForEach([("Background", \CustomTheme.Colors.background), ("Surface", \.surface), ("Text", \.text),
-                         ("Controls", \.control), ("Alternate", \.alternate), ("Tabs / typed", \.tab), ("Windows", \.window)], id: \.0) { title, path in
+                         ("Controls", \.control), ("Menus", \.alternate), ("Tabs", \.tab), ("Desktop / regions", \.window)], id: \.0) { title, path in
                     ColorPicker(title, selection: customColor(path), supportsOpacity: false).font(.system(size: 11))
                 }
                 Text("Choose readable text and distinct hint colors. Custom variants are saved separately in TOML.")
@@ -220,7 +258,7 @@ struct Dashboard: View {
             TextField("Hint letters", text: $draft.alphabet).font(.system(size: 12, design: .monospaced)).textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Hint alphabet")
             HStack(spacing: 7) {
-                Button("Readable / Vimium") { draft.alphabet = HintConfiguration.defaultAlphabet }
+                Button("Distinct letters") { draft.alphabet = HintConfiguration.defaultAlphabet }
                 Button("Home row") { draft.alphabet = "asdfjkl" }
             }.font(.system(size: 10)).buttonStyle(.bordered)
             Text("Two or more unique letters. Their order determines the codes. Popup ledgers add left-to-right numbers (A1, A2).").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -233,13 +271,11 @@ struct Dashboard: View {
                 TextField("None", text: $draft.codePrefix).font(.system(size: 12, design: .monospaced)).frame(width: 60)
                     .textFieldStyle(.roundedBorder).accessibilityLabel("Hint prefix")
             }
-            HStack(spacing: 8) {
-                ForEach(Array(sampleCodes.enumerated()), id: \.offset) { index, code in
-                    let colors = [(palette.control, palette.typedControl), (palette.tab, palette.typedTab), (palette.alternate, palette.typedAlternate)]
-                    previewBadge(code.uppercased(), color: Color(nsColor: NSColor(rgb: colors[index % 3].0)), typedColor: Color(nsColor: NSColor(rgb: colors[index % 3].1)))
-                }
-                Spacer()
-            }.padding(.vertical, 4)
+            HintSamples(samples: sampleCodes.enumerated().map { index, code in
+                let colors = HintStyle.colors(kind: .control, index: index, palette: palette)
+                return (code.uppercased(), colors.accent, colors.typed)
+            }, fontSize: CGFloat(model.hintSize), background: palette.background, prefixLength: 1)
+                .padding(.vertical, 4)
             if let error = draft.error { Text(error).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 Button("Reset") { draft.length = 2; draft.alphabet = HintConfiguration.defaultAlphabet; draft.codePrefix = ""; draft.error = nil }
@@ -265,7 +301,7 @@ struct Dashboard: View {
                                 Text(url.deletingPathExtension().lastPathComponent).font(.system(size: 11)).help(app)
                             } else { Image(systemName: "macwindow").foregroundStyle(neon); Text(app).font(.system(size: 11)) }
                             Spacer()
-                            Button { model.apps.removeAll { $0 == app } } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.white.opacity(0.3)) }
+                            Button { model.apps.removeAll { $0 == app } } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.secondary) }
                                 .buttonStyle(.plain).accessibilityLabel("Remove \(app)")
                         }.padding(.vertical, 4)
                     }
@@ -279,8 +315,16 @@ struct Dashboard: View {
                         if let id = app.bundleIdentifier { Button(app.localizedName ?? id) { add(id) } }
                     }
                 } label: { Image(systemName: "chevron.down") }.menuStyle(.borderlessButton).frame(width: 20).help("Choose a running app")
-            }.padding(10).background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 7))
+            }.padding(10).background(Color(nsColor: NSColor(rgb: palette.background)), in: RoundedRectangle(cornerRadius: 7))
             Text("Filters also apply to the apps that own menu bar items.").font(.system(size: 10)).foregroundStyle(.secondary)
+            Divider()
+            Toggle("Website icons for Chrome", isOn: Binding(get: { model.chromeIcons }, set: { model.configureChromeIcons($0) }))
+                .font(.system(size: 12))
+            Text("Uses Chrome’s local icon cache and asks for Automation access. App icons remain the fallback.")
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if !model.iconAccessMessage.isEmpty {
+                Text(model.iconAccessMessage).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+            }
         }.card(surface: Color(nsColor: NSColor(rgb: palette.surface)))
     }
     private var sampleCodes: [String] {
@@ -295,15 +339,9 @@ struct Dashboard: View {
             draft.error = nil
         } catch { draft.error = error.localizedDescription }
     }
-    private func previewBadge(_ code: String, color: Color, typedColor: Color) -> some View {
-        (Text(String(code.prefix(1))).foregroundColor(typedColor) + Text(String(code.dropFirst())).foregroundColor(color)).font(.system(size: CGFloat(model.hintSize), weight: .bold)).foregroundStyle(color)
-            .padding(.horizontal, 8).padding(.vertical, 5)
-            .background(Color(nsColor: NSColor(rgb: palette.background)), in: RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(color.opacity(0.25)))
-    }
     private func section(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1.5)
+            Text(title).font(.system(size: HintStyle.minimumTextSize, weight: .semibold, design: .monospaced)).tracking(1.5)
             Text(detail).font(.system(size: 10)).foregroundStyle(.secondary)
         }
     }
@@ -316,7 +354,7 @@ struct Dashboard: View {
             .accessibilityLabel(caption == "Screenshot" ? "Screenshot: Command Shift 3" : caption == "Dismiss" ? "Dismiss: Escape" : "Edit code: Backspace")
     }
     private func legend(_ title: String, color: Color) -> some View {
-        HStack(spacing: 4) { Circle().fill(color).frame(width: 4, height: 4); Text(title).font(.system(size: 9)).foregroundStyle(.secondary) }
+        HStack(spacing: 4) { Circle().fill(color).frame(width: 4, height: 4); Text(title).font(.system(size: HintStyle.minimumTextSize)).foregroundStyle(.secondary) }
     }
     private func addApp() { add(model.newApp); model.newApp = "" }
     private func add(_ raw: String) {
@@ -328,6 +366,6 @@ private extension View {
     func card(surface: Color) -> some View {
         padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(surface, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.primary.opacity(0.06)))
     }
 }

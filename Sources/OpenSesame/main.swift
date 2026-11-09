@@ -27,15 +27,20 @@ if CommandLine.arguments.dropFirst().first == "--render-previews" {
 // require synthetic keystrokes or a second Accessibility-authorized process.
 let hintControlNotification = Notification.Name("io.bitsugar.opensesame.hint-control")
 let hintControlResponse = Notification.Name("io.bitsugar.opensesame.hint-response")
-if let command = CommandLine.arguments.dropFirst().first, ["--show-hints", "--hide-hints", "--diagnostics"].contains(command) {
-    if command == "--diagnostics" {
+if let command = CommandLine.arguments.dropFirst().first, ["--show-hints", "--hide-hints", "--diagnostics", "--inspect-ax"].contains(command) {
+    if command == "--diagnostics" || command == "--inspect-ax" {
         let requestID = UUID().uuidString
         var response: String?
         let observer = DistributedNotificationCenter.default().addObserver(forName: hintControlResponse, object: requestID, queue: .main) { notification in
             response = notification.userInfo?["json"] as? String
         }
-        DistributedNotificationCenter.default().postNotificationName(hintControlNotification, object: command, userInfo: ["requestID": requestID], deliverImmediately: true)
-        let deadline = Date().addingTimeInterval(3)
+        var info = ["requestID": requestID]
+        if command == "--inspect-ax" {
+            guard CommandLine.arguments.count == 3 else { fputs("Usage: OpenSesame --inspect-ax <bundle-id>\n", stderr); exit(2) }
+            info["bundleID"] = CommandLine.arguments[2]
+        }
+        DistributedNotificationCenter.default().postNotificationName(hintControlNotification, object: command, userInfo: info, deliverImmediately: true)
+        let deadline = Date().addingTimeInterval(command == "--inspect-ax" ? 8 : 3)
         while response == nil && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
         DistributedNotificationCenter.default().removeObserver(observer)
         guard let response else {
@@ -79,6 +84,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hintControl = DistributedNotificationCenter.default().addObserver(forName: hintControlNotification, object: nil, queue: .main) { [weak self] notification in
             if notification.object as? String == "--show-hints" { self?.model.summon() }
             else if notification.object as? String == "--hide-hints" { self?.model.cancel() }
+            else if notification.object as? String == "--inspect-ax",
+                    let requestID = notification.userInfo?["requestID"] as? String,
+                    let bundleID = notification.userInfo?["bundleID"] as? String {
+                DispatchQueue.global(qos: .utility).async {
+                    let json = AccessibilityInspection.json(bundleID: bundleID)
+                    DistributedNotificationCenter.default().postNotificationName(hintControlResponse, object: requestID,
+                        userInfo: ["json": json], deliverImmediately: true)
+                }
+            }
             else if notification.object as? String == "--diagnostics", let requestID = notification.userInfo?["requestID"] as? String,
                     let self {
                 DistributedNotificationCenter.default().postNotificationName(hintControlResponse, object: requestID,
@@ -107,6 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+// Register this bundle before constructing Controller: its initial trust check
+// contacts TCC, which must resolve the current path rather than a moved build.
+_ = AccessibilityPermission().registerApplication()
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

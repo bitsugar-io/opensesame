@@ -3,6 +3,12 @@ import CoreGraphics
 /// Shared geometry for every application: no app names or widget labels.
 public enum WidgetLayout {
     public static let gap: CGFloat = 6
+    public static let maximumDetachedGap: CGFloat = 48
+    public static func isAssociated(_ badge: CGRect, with control: CGRect) -> Bool {
+        let dx = max(0, max(control.minX - badge.maxX, badge.minX - control.maxX))
+        let dy = max(0, max(control.minY - badge.maxY, badge.minY - control.maxY))
+        return hypot(dx, dy) <= maximumDetachedGap
+    }
     public static func contentSurface(reported: CGRect, controls: [CGRect], text: [CGRect]) -> CGRect {
         let controls = controls.filter { reported.intersects($0) }
         guard let first = controls.first else { return reported }
@@ -14,10 +20,25 @@ public enum WidgetLayout {
         return nearbyText.reduce(content) { $0.union($1) }.insetBy(dx: -12, dy: -12).intersection(reported)
     }
     public static func nearby(control: CGRect, badge: CGSize, bounds: CGRect, occupied: [CGRect], controls: [CGRect], text: [CGRect]) -> CGRect? {
+        // AppKit coordinates: larger y is above. Start just left of the
+        // target's upper corner, then try aligned gutters at screen edges.
+        let left = control.minX - badge.width / 2
         let center = control.midX - badge.width / 2
         let below = CGRect(x: center, y: control.minY - gap - badge.height, width: badge.width, height: badge.height)
         let above = CGRect(x: center, y: control.maxY + gap, width: badge.width, height: badge.height)
-        let candidates = [below, above]
+        let upperLeft = CGRect(x: left, y: control.maxY + gap, width: badge.width, height: badge.height)
+        let leftSide = CGRect(x: control.minX - gap - badge.width, y: control.midY - badge.height / 2, width: badge.width, height: badge.height)
+        // A vertical toolbar keeps one shared side, including its end buttons.
+        // Two lanes accommodate badges taller than the control pitch.
+        let verticalGroup = control.width <= 72 && control.height <= 40 && controls.contains { other in
+            other != control && other.width <= 72 && other.height <= 40 &&
+            abs(other.midX - control.midX) <= 4 &&
+            abs(other.midY - control.midY) <= (other.height + control.height) / 2 + 12 &&
+            !other.intersects(control)
+        }
+        let candidates = verticalGroup
+            ? [leftSide, leftSide.offsetBy(dx: -badge.width - gap, dy: 0), upperLeft, above, below]
+            : [upperLeft, above, below, leftSide]
         let obstacles = controls.filter { $0 == control || !$0.contains(control) } + text
         return candidates.first { frame in
             bounds.insetBy(dx: 4, dy: 4).contains(frame) &&
@@ -47,7 +68,7 @@ public enum WidgetLayout {
             for x in xs {
                 let frame = CGRect(x: x, y: y, width: badge.width, height: badge.height)
                 let reservation = frame.union(frame.offsetBy(dx: 0, dy: -captionHeight))
-                if bounds.insetBy(dx: 4, dy: 4).contains(reservation),
+                if isAssociated(frame, with: control), bounds.insetBy(dx: 4, dy: 4).contains(reservation),
                    !occupied.contains(where: { $0.insetBy(dx: -4, dy: -4).intersects(reservation) }),
                    !obstacles.contains(where: { $0.insetBy(dx: -2, dy: -2).intersects(reservation) }) {
                     return frame

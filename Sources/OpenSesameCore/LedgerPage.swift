@@ -10,35 +10,44 @@ public struct LedgerPage {
     public let rowHeight: CGFloat
     public let columnWidth: CGFloat
 
-    public init(items: Int, requestedPage: Int, bounds: CGRect, surface: CGRect, fontSize: CGFloat, codeWidth: CGFloat, avoid: [CGRect] = []) {
-        rowHeight = ceil(fontSize) + 18
+    public init(items: Int, layoutItems: Int? = nil, requestedPage: Int, bounds: CGRect, surface: CGRect, fontSize: CGFloat, codeWidth: CGFloat, avoid: [CGRect] = [], focus: CGRect? = nil) {
+        rowHeight = max(ceil(fontSize) + 18, ceil(max(12, fontSize - 2) * 1.25) * 2 + 12)
         rowsPerColumn = max(1, Int((bounds.height - 92) / rowHeight))
         let desiredWidth = max(264, codeWidth + 160)
         let leftRoom = max(0, surface.minX - bounds.minX - 24)
         let rightRoom = max(0, bounds.maxX - surface.maxX - 24)
-        let useLeft = leftRoom >= desiredWidth || leftRoom >= rightRoom
-        let sideRoom = useLeft ? leftRoom : rightRoom
         columnWidth = min(desiredWidth, max(1, bounds.width - 24))
-        let maxColumns = max(1, Int(sideRoom / columnWidth))
-        let columns = min(maxColumns, max(1, Int(ceil(Double(items) / Double(rowsPerColumn)))))
-        let capacity = rowsPerColumn * columns
+        // One shared rule: outside the owning window/popup on the right,
+        // otherwise outside on the left. Only use an interior panel when
+        // neither side can hold one full readable column.
+        let useRight = rightRoom >= columnWidth
+        let useLeft = !useRight && leftRoom >= columnWidth
+        let exterior = useRight || useLeft
+        // Keep one readable column on every side; paginate instead of widening
+        // into a different layout because another app/window leaves more room.
+        let layoutCount = max(items, layoutItems ?? items)
+        let capacity = rowsPerColumn
         count = max(1, Int(ceil(Double(items) / Double(capacity))))
         number = ((requestedPage % count) + count) % count
         let start = min(items, number * capacity)
         range = start..<min(items, start + capacity)
-        let width = CGFloat(columns) * columnWidth
+        let width = columnWidth
         // Keep the panel the same size on the last page and during page changes.
-        let height = min(bounds.height - 24, CGFloat(min(rowsPerColumn, max(1, items))) * rowHeight + 64)
-        let x = useLeft ? surface.minX - width - 12 : surface.maxX + 12
+        let height = min(bounds.height - 24, CGFloat(min(rowsPerColumn, max(1, layoutCount))) * rowHeight + 64)
+        let relevant = focus ?? surface
+        let x = useRight ? surface.maxX + 12 : (useLeft ? surface.minX - width - 12 : relevant.maxX - width - 12)
         let preferred = CGRect(x: min(max(bounds.minX + 12, x), max(bounds.minX + 12, bounds.maxX - width - 12)),
-                       y: min(max(bounds.minY + 12, surface.maxY - height), bounds.maxY - height - 12), width: width, height: height)
+                       y: min(max(bounds.minY + 12, relevant.maxY - height), bounds.maxY - height - 12), width: width, height: height)
         if avoid.isEmpty { panel = preferred; return }
         var candidates = [preferred]
         var y = bounds.minY + 12
         while y + height <= bounds.maxY - 12 {
-            var x = bounds.minX + 12
+            // Collision avoidance may slide along the chosen side. It must
+            // never pull an exterior panel back over the app's content.
+            var x = exterior ? preferred.minX : bounds.minX + 12
             while x + width <= bounds.maxX - 12 {
                 candidates.append(CGRect(x: x, y: y, width: width, height: height))
+                if exterior { break }
                 x += 24
             }
             y += 24

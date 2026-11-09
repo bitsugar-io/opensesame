@@ -41,6 +41,18 @@ enum DevelopmentPreviews {
         try PopupLayoutPreview.render(to: directory)
         try OverflowPreview.render(to: directory)
         try OverflowPreview.renderMixed(to: directory)
+        try LayoutConsistencyPreview.render(to: directory)
+        try ReviewRegressionPreview.render(to: directory)
+        try SectionLayoutPreview.render(to: directory)
+        try PlayerSectionPreview.render(to: directory)
+        try WindowSelectionPreview.render(to: directory)
+        try BlockLetteringPreview.render(to: directory)
+        try HintAppearancePreview.render(to: directory)
+        try StackPickerPreview.render(to: directory)
+        try ContainerSelectionPreview.render(to: directory)
+        try OverflowPlacementPreview.render(to: directory)
+        try TabGroupPreview.render(to: directory)
+        try DesktopStackPreview.render(to: directory)
     }
 }
 
@@ -50,8 +62,10 @@ private final class PopupLayoutPreview: NSView {
     let items: [Item]
     let popup: CGRect
     let heading: String
-    init(size: CGSize, popup: CGRect, items: [Item], heading: String) {
+    let palette: ThemePalette
+    init(size: CGSize, popup: CGRect, items: [Item], heading: String, palette: ThemePalette = ThemePalette(theme: .glitch, dark: true)) {
         self.popup = popup; self.items = items; self.heading = heading
+        self.palette = palette
         super.init(frame: CGRect(origin: .zero, size: size))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -60,18 +74,18 @@ private final class PopupLayoutPreview: NSView {
         CGRect(x: item.frame.minX + 10, y: item.frame.minY + 8, width: min(item.frame.width - 20, 105), height: 14)
     } }
     override func draw(_ dirtyRect: NSRect) {
-        BrandArtwork.background.setFill(); bounds.fill()
-        (heading as NSString).draw(at: CGPoint(x: 24, y: bounds.maxY - 30), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold), .foregroundColor: BrandArtwork.teal])
-        NSColor(white: 0.12, alpha: 1).setFill()
+        NSColor(rgb: palette.background).setFill(); bounds.fill()
+        (heading as NSString).draw(at: CGPoint(x: 24, y: bounds.maxY - 30), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor(rgb: palette.tab)])
+        NSColor(rgb: palette.surface).setFill()
         NSBezierPath(roundedRect: local(popup), xRadius: 14, yRadius: 14).fill()
         for item in items {
             let rect = local(item.frame)
-            NSColor(white: 0.20, alpha: 1).setFill()
+            NSColor(rgb: palette.text).withAlphaComponent(0.1).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
             let visible = item.frame.width < 40 ? item.title.replacingOccurrences(of: " minutes", with: "").replacingOccurrences(of: " hours", with: "h").replacingOccurrences(of: " hour", with: "h").replacingOccurrences(of: "Custom duration", with: "…") : item.title
-            (visible as NSString).draw(at: CGPoint(x: rect.minX + (rect.width > 70 ? 10 : 3), y: rect.maxY - 22), withAttributes: [.font: NSFont.systemFont(ofSize: rect.width > 70 ? 12 : 10), .foregroundColor: NSColor.white])
+            (visible as NSString).draw(at: CGPoint(x: rect.minX + (rect.width > 70 ? 10 : 3), y: rect.maxY - 22), withAttributes: [.font: NSFont.systemFont(ofSize: rect.width > 70 ? 12 : 10), .foregroundColor: NSColor(rgb: palette.text)])
         }
-        ("RENDERED FIXTURE · ACTUAL HINT CANVAS" as NSString).draw(at: CGPoint(x: 24, y: 20), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.lightGray])
+        ("RENDERED FIXTURE · ACTUAL HINT CANVAS" as NSString).draw(at: CGPoint(x: 24, y: 20), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor(rgb: palette.text).withAlphaComponent(0.65)])
     }
     static func render(to directory: URL) throws {
         func item(_ title: String, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat, role: String = "AXButton") -> Item {
@@ -131,6 +145,125 @@ private final class PopupLayoutPreview: NSView {
     }
 }
 
+/// Boundary cases identified by the independent macOS UI/UX review.
+private enum ReviewRegressionPreview {
+    static func render(to directory: URL) throws {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        var config = AppConfiguration()
+        config.hints.size = 22; config.hints.prefix = "www"
+        config.hints.alphabet = "wm"; config.hints.minimumLength = 3
+        let url = scratch.appendingPathComponent("config.toml")
+        try config.toml().write(to: url, atomically: true, encoding: .utf8)
+        let model = Controller(configurationURL: url)
+        model.loadConfigurationAtStartup() // Fixture config only; no AX or input hooks.
+        model.trusted = true
+        for dark in [false, true] {
+            model.appearanceMode = dark ? .dark : .light
+            NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            let codes = Array(Hints.labels(count: 2000, configuration: model.hintConfiguration).prefix(3))
+            let sample = NSHostingView(rootView: HintSamples(samples: codes.map { ($0.uppercased(), model.resolvedPalette.control, model.resolvedPalette.typedControl) },
+                fontSize: 22, background: model.resolvedPalette.background).frame(width: 328))
+            sample.frame = CGRect(origin: .zero, size: sample.fittingSize)
+            sample.layoutSubtreeIfNeeded()
+            // Three full-size codes require a stack, not a compressed row.
+            guard sample.fittingSize.width <= 329, sample.fittingSize.height > 90 else { throw CocoaError(.coderInvalidValue) }
+            for page in [DashboardPage.letters, .hints] {
+                let view = NSHostingView(rootView: Dashboard(model: model, page: page))
+                view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                view.frame = CGRect(origin: .zero, size: view.fittingSize)
+                view.layoutSubtreeIfNeeded()
+                guard view.fittingSize.width <= 401,
+                      let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.coderInvalidValue) }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to:
+                    directory.appendingPathComponent("settings-\(page.rawValue.lowercased())-long-\(dark ? "dark" : "light").png"))
+            }
+        }
+        let items: [PopupLayoutPreview.Item] = [
+            .init(title: "", role: "AXButton", frame: CGRect(x: 220, y: 240, width: 24, height: 24)),
+            .init(title: "", role: "AXButton", frame: CGRect(x: 260, y: 240, width: 24, height: 24))]
+        let view = PopupLayoutPreview(size: CGSize(width: 800, height: 600),
+            popup: CGRect(x: 180, y: 180, width: 200, height: 200), items: items, heading: "UNNAMED CONTROLS · LEADERS + OUTLINES")
+        let canvas = HintCanvas(frame: view.bounds)
+        canvas.screenFrame = view.bounds; canvas.desktopTop = view.bounds.height
+        canvas.scopeFrame = view.popup
+        canvas.textFrames = [CGRect(x: 180, y: 200, width: 200, height: 34), CGRect(x: 180, y: 270, width: 200, height: 34)]
+        canvas.targets = items.enumerated().map { index, item in
+            Target(element: AXUIElementCreateApplication(0), frame: item.frame, label: ["aa", "bb"][index], kind: .control,
+                action: "AXPress", clicksMenuBarExtra: false,
+                metadata: TargetMetadata(role: item.role, subrole: "", title: "", description: "", owner: 0, bundleID: "preview"))
+        }
+        view.addSubview(canvas)
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.coderInvalidValue) }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        guard canvas.associatedLabels == canvas.localLabels, canvas.drawnLabels == ["aa", "bb"] else { throw CocoaError(.coderInvalidValue) }
+        try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("layout-unnamed-controls.png"))
+    }
+}
+
+/// The same geometry must lay out identically regardless of the provider.
+private enum LayoutConsistencyPreview {
+    static func render(to directory: URL) throws {
+        let items: [PopupLayoutPreview.Item] = [
+            .init(title: "Toolbar", role: "AXMenuButton", frame: CGRect(x: 800, y: 8, width: 36, height: 24)),
+            .init(title: "App", role: "AXMenuBarItem", frame: CGRect(x: 40, y: 0, width: 28, height: 24)),
+            .init(title: "Project", role: "AXTab", frame: CGRect(x: 140, y: 90, width: 240, height: 36)),
+            .init(title: "Reference", role: "AXTab", frame: CGRect(x: 390, y: 90, width: 240, height: 36)),
+            .init(title: "Search", role: "AXButton", frame: CGRect(x: 180, y: 170, width: 180, height: 36))
+        ] + (0..<5).map { index in
+            .init(title: ["Edit", "History", "Files", "Tools", "Help"][index], role: "AXButton",
+                  frame: CGRect(x: 850, y: 180 + CGFloat(index) * 36, width: 28, height: 28))
+        }
+        for size: CGFloat in [12, 16, 22] {
+            for dark in [false, true] {
+                var reference: [String: CGRect]?
+                for provider in ["com.google.Chrome", "com.mitchellh.ghostty", "preview.native"] {
+                    let view = PopupLayoutPreview(size: CGSize(width: 1000, height: 600),
+                        popup: CGRect(x: 100, y: 80, width: 800, height: 450), items: items,
+                        heading: "TABS + TOOLBAR · \(Int(size)) PT · \(dark ? "DARK" : "LIGHT")", palette: ThemePalette(theme: .glitch, dark: dark))
+                    let canvas = HintCanvas(frame: view.bounds)
+                    canvas.screenFrame = view.bounds; canvas.desktopTop = view.bounds.height
+                    canvas.fontSize = size; canvas.palette = ThemePalette(theme: .glitch, dark: dark)
+                    canvas.textFrames = view.textObstacles
+                    let labels = Hints.labels(count: items.count)
+                    canvas.targets = items.enumerated().map { index, item in
+                        Target(element: AXUIElementCreateApplication(0), frame: item.frame, label: labels[index],
+                            kind: TargetKind.classify(role: item.role, subrole: "", parentRole: "", description: item.title), action: "AXPress", clicksMenuBarExtra: false,
+                            metadata: TargetMetadata(role: item.role, subrole: "", title: item.title,
+                                description: item.title, owner: 0, bundleID: provider))
+                    }
+                    view.addSubview(canvas)
+                    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.coderInvalidValue) }
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    let frames = canvas.localBadgeFrames
+                    guard canvas.drawnLabels == Set(labels), frames.count == labels.count,
+                          reference == nil || reference == frames else { throw CocoaError(.coderInvalidValue) }
+                    for (label, frame) in frames {
+                        guard view.bounds.insetBy(dx: 4, dy: 4).contains(frame),
+                              !items.contains(where: { $0.role != "AXTab" && view.local($0.frame).intersects(frame) }),
+                              !view.textObstacles.contains(where: { view.local($0).intersects(frame) }),
+                              !frames.contains(where: { $0.key != label && $0.value.insetBy(dx: -3, dy: -3).intersects(frame) })
+                        else { throw CocoaError(.coderInvalidValue) }
+                    }
+                    reference = frames
+                    canvas.prefix = labels.last!
+                    canvas.cacheDisplay(in: view.bounds, to: bitmap)
+                    guard canvas.localBadgeFrames == [labels.last!: frames[labels.last!]!], canvas.drawnLabels == [labels.last!]
+                    else { throw CocoaError(.coderInvalidValue) }
+                    if provider == "com.google.Chrome" {
+                        canvas.prefix = ""
+                        view.cacheDisplay(in: view.bounds, to: bitmap)
+                        try bitmap.representation(using: .png, properties: [:])!.write(to:
+                            directory.appendingPathComponent("layout-browser-\(Int(size))-\(dark ? "dark" : "light").png"))
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Exhaustively checks real renderer pagination without starting the app,
 /// installing input hooks, or interacting with live Accessibility controls.
 private enum OverflowPreview {
@@ -151,6 +284,17 @@ private enum OverflowPreview {
               canvas.drawnLabels == ["ss", "sa", "sd"] else {
             fputs("Mixed overflow must preserve local menu and tab markers.\n", stderr)
             throw CocoaError(.coderInvalidValue)
+        }
+        let localFrames = canvas.localBadgeFrames
+        let panelFrame = canvas.ledgerPanelFrame
+        for prefix in ["sa", "sd", "zz", ""] {
+            canvas.prefix = prefix
+            canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+            guard canvas.localBadgeFrames == localFrames.filter({ $0.key.hasPrefix(prefix) }),
+                  canvas.overflowLabels == ["sd"],
+                  canvas.usesLedger == "sd".hasPrefix(prefix),
+                  canvas.ledgerPanelFrame == ("sd".hasPrefix(prefix) ? panelFrame : nil)
+            else { throw CocoaError(.coderInvalidValue) }
         }
         try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("layout-mixed-overflow.png"))
     }

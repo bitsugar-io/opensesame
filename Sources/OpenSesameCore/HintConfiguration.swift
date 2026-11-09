@@ -1,8 +1,10 @@
 import Foundation
 
 public struct HintConfiguration: Equatable {
-    // Vimium's default avoids ambiguous V/Y and I/O/Q lookalikes.
-    public static let defaultAlphabet = "sadfjklewcmpgh"
+    // Curated for both the original block glyphs and compact uppercase tags.
+    // Avoid competing A/H, D/B/O/Q, F/E/P/R, J/I/L, and W/M/U/V silhouettes.
+    public static let defaultAlphabet = "sadfjkwt"
+    public static let previousDefaultAlphabet = "sadfjklewcmpgh"
     public static let legacyAlphabet = "asdfghjklqwertyuiopzxcvbnm"
     public static let standard = try! HintConfiguration()
     public let minimumLength: Int

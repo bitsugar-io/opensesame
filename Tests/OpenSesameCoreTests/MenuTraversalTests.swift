@@ -24,7 +24,7 @@ import Testing
     #expect(!MenuTraversal.descendsInto(role: "AXMenuBarItem"))
     #expect(MenuTraversal.descendsInto(role: "AXGroup"))
 }
-@Test func tabSwitchAndCloseEndHintMode() {
+@Test func tabsAndCloseDoNotUsePopupFollowing() {
     #expect(!TargetKind.tab.followsOpenedSurface)
     #expect(!TargetKind.close.followsOpenedSurface)
     #expect(TargetKind.menu.followsOpenedSurface)

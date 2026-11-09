@@ -53,3 +53,37 @@ import Testing
     #expect(bounds.contains(relocated.panel))
     #expect(relocated.range == original.range)
 }
+
+@Test func filteringKeepsOverflowFootprintAndColumnCapacity() {
+    let bounds = CGRect(x: 0, y: 0, width: 1400, height: 600)
+    let surface = CGRect(x: 900, y: 200, width: 200, height: 300)
+    let all = LedgerPage(items: 40, layoutItems: 40, requestedPage: 0, bounds: bounds, surface: surface, fontSize: 22, codeWidth: 60)
+    for count in [0, 1, 5, 20, 40] {
+        let filtered = LedgerPage(items: count, layoutItems: 40, requestedPage: 10, bounds: bounds, surface: surface, fontSize: 22, codeWidth: 60)
+        #expect(filtered.panel == all.panel)
+        #expect(filtered.rowsPerColumn == all.rowsPerColumn)
+        #expect(filtered.range.upperBound <= count)
+    }
+}
+
+@Test func overflowUsesWindowRightThenLeftAndOnlyFallsInsideWhenNeitherFits() {
+    let bounds = CGRect(x: 0, y: 0, width: 1600, height: 900)
+    let centered = CGRect(x: 500, y: 100, width: 600, height: 700)
+    func page(_ window: CGRect, _ focus: CGRect? = nil, avoid: [CGRect] = []) -> LedgerPage {
+        LedgerPage(items: 12, requestedPage: 0, bounds: bounds, surface: window, fontSize: 16, codeWidth: 44, avoid: avoid, focus: focus)
+    }
+    let right = page(centered)
+    #expect(right.panel.minX == centered.maxX + 12)
+    #expect(right.panel.width == right.columnWidth)
+    let blockedRight = CGRect(x: 600, y: 100, width: 900, height: 700)
+    #expect(page(blockedRight).panel.maxX == blockedRight.minX - 12)
+    #expect(page(blockedRight).panel.width == right.panel.width)
+    let overlappingHint = right.panel.insetBy(dx: 8, dy: 8)
+    #expect(page(centered, avoid: [overlappingHint]).panel.minX == right.panel.minX)
+    for focus in [CGRect(x: 520, y: 650, width: 100, height: 100), CGRect(x: 900, y: 200, width: 120, height: 80)] {
+        #expect(page(centered, focus).panel.minX == right.panel.minX)
+    }
+    let full = page(bounds, CGRect(x: 1000, y: 300, width: 400, height: 400))
+    #expect(bounds.contains(full.panel))
+    #expect(full.panel.maxX == 1388)
+}

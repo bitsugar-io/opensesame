@@ -11,9 +11,15 @@ public struct KeyboardRouting {
         public var pending: Bool
         public var labels: [String]
         public var keyCharacters: [Int: String]
+        public var stacksShortcut: Shortcut
+        public var saveStackShortcut: Shortcut
+        public var stacksOpen: Bool
+        public var mousePassthroughFrame: CGRect?
         public var canPage: Bool
-        public init(generation: UUID, shortcut: Shortcut, enabled: Bool, recording: Bool, active: Bool, pending: Bool, labels: [String], canPage: Bool = false, keyCharacters: [Int: String] = [:]) {
+        public init(generation: UUID, shortcut: Shortcut, enabled: Bool, recording: Bool, active: Bool, pending: Bool, labels: [String], canPage: Bool = false, keyCharacters: [Int: String] = [:], stacksShortcut: Shortcut = .stacks, saveStackShortcut: Shortcut = .saveStack, stacksOpen: Bool = false, mousePassthroughFrame: CGRect? = nil) {
             self.generation = generation; self.shortcut = shortcut; self.enabled = enabled; self.recording = recording
+            self.stacksShortcut = stacksShortcut; self.stacksOpen = stacksOpen; self.mousePassthroughFrame = mousePassthroughFrame
+            self.saveStackShortcut = saveStackShortcut
             self.active = active; self.pending = pending; self.labels = labels; self.canPage = canPage; self.keyCharacters = keyCharacters
         }
     }
@@ -37,6 +43,10 @@ public struct KeyboardRouting {
         disarmed = true
         return session
     }
+    public mutating func mouse(at point: CGPoint) -> Bool {
+        if snapshot?.stacksOpen == true, snapshot?.mousePassthroughFrame?.contains(point) == true { return false }
+        return disarm()
+    }
     public mutating func route(key: Int, modifiers: Set<String>, text: String, repeating: Bool, now: TimeInterval) -> Decision {
         guard let snapshot, snapshot.enabled, !snapshot.recording else { return .pass }
         // A blocked main thread must never leave the keyboard captive. Recovery
@@ -47,7 +57,8 @@ public struct KeyboardRouting {
             return wasCapturing ? .cancelAndPass : .pass
         }
         if key == 20, modifiers.isSuperset(of: ["command", "shift"]), !modifiers.contains("option") { return .pass }
-        if key == snapshot.shortcut.keyCode, modifiers == Set(snapshot.shortcut.modifiers) {
+        if (key == snapshot.shortcut.keyCode && modifiers == Set(snapshot.shortcut.modifiers)) ||
+            (key == snapshot.stacksShortcut.keyCode && modifiers == Set(snapshot.stacksShortcut.modifiers)) {
             if snapshot.active || snapshot.pending { disarmed = true }
             return repeating ? .consume : .handle(consume: true, generation: nil)
         }
@@ -57,7 +68,23 @@ public struct KeyboardRouting {
             return .pass
         }
         if key == 53 { disarmed = true; return .handle(consume: true, generation: snapshot.generation) }
-        if key == 51 { if !prefix.isEmpty { prefix.removeLast() }; return .handle(consume: true, generation: snapshot.generation) }
+        if key == snapshot.saveStackShortcut.keyCode, modifiers == Set(snapshot.saveStackShortcut.modifiers) {
+            disarmed = true
+            return repeating ? .consume : .handle(consume: true, generation: snapshot.generation)
+        }
+        if snapshot.stacksOpen, modifiers == ["command"], [51, 6].contains(key) {
+            return repeating ? .consume : .handle(consume: true, generation: snapshot.generation)
+        }
+        if modifiers.isDisjoint(with: ["control", "option", "command"]) {
+            if (key == 49 && !snapshot.stacksOpen) || key == 36 || (key == 51 && modifiers.contains("shift") && !snapshot.stacksOpen) {
+                disarmed = true
+                return repeating ? .consume : .handle(consume: true, generation: snapshot.generation)
+            }
+            if snapshot.stacksOpen, [48, 125, 126].contains(key) {
+                return .handle(consume: true, generation: snapshot.generation)
+            }
+            if key == 51 { if !prefix.isEmpty { prefix.removeLast() }; return .handle(consume: true, generation: snapshot.generation) }
+        }
         guard modifiers.isDisjoint(with: ["control", "option", "command"]) else {
             disarmed = true; return .handle(consume: false, generation: snapshot.generation)
         }

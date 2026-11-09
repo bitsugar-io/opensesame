@@ -1,6 +1,17 @@
 import Testing
 @testable import OpenSesameCore
 
+@Test func tabGroupHeadersRemainChoicesWhileTheirRootContainerIsExcluded() {
+    for bundleID in ["com.google.Chrome", "test.browser"] {
+        for parent in ["AXTabGroup", "AXWindow"] {
+            let kind = TargetKind.classify(role: "AXTabGroup", subrole: "", parentRole: parent, description: "Work")
+            #expect((kind == .tab) == (parent == "AXTabGroup"))
+            #expect(TargetExclusion.excludes(role: "AXTabGroup", subrole: "", title: "Work", description: "", kind: kind,
+                bundleID: bundleID, action: "AXShowMenu") == (parent != "AXTabGroup"))
+        }
+    }
+}
+
 @Test func closeAndWindowChromeNeverReceiveHints() {
     for subrole in ["AXCloseButton", "AXMinimizeButton", "AXZoomButton", "AXFullScreenButton"] {
         #expect(TargetExclusion.excludes(role: "AXButton", subrole: subrole, title: "", description: "", kind: .control))
@@ -37,5 +48,25 @@ import Testing
 @Test func windowChromeRolesAreExcludedEvenWhenSubrolesAreMissing() {
     for role in ["AXCloseButton", "AXMinimizeButton", "AXZoomButton", "AXFullScreenButton", "AXGrowArea"] {
         #expect(TargetExclusion.excludes(role: role, subrole: "", title: "", description: "", kind: .control))
+    }
+}
+
+@Test func toolbarContainerIsNotAnActionButItsNavigationButtonsRemainTargets() {
+    #expect(TargetExclusion.excludes(role: "AXToolbar", subrole: "", title: "", description: "", kind: .control))
+    for name in ["Back", "Forward", "Search"] {
+        #expect(!TargetExclusion.excludes(role: "AXButton", subrole: "", title: name, description: "", kind: .control))
+    }
+    #expect(!TargetExclusion.excludes(role: "AXGroup", subrole: "", title: "Media", description: "", kind: .control))
+}
+
+@Test func genericContainerContextMenusDoNotBecomeControlsInAnyApp() {
+    for bundle in ["com.google.Chrome", "com.mitchellh.ghostty", "test.native"] {
+        for role in ["AXGroup", "AXTabGroup"] {
+            #expect(TargetExclusion.excludes(role: role, subrole: "", title: "Container", description: "", kind: .control, bundleID: bundle, action: "AXShowMenu"))
+            #expect(!TargetExclusion.excludes(role: role, subrole: "", title: "Action", description: "", kind: .control, bundleID: bundle, action: "AXPress"))
+        }
+        for role in ["AXButton", "AXRadioButton", "AXLink", "AXMenuButton"] {
+            #expect(!TargetExclusion.excludes(role: role, subrole: "", title: "Control", description: "", kind: .control, bundleID: bundle, action: "AXShowMenu"))
+        }
     }
 }

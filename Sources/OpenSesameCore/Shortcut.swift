@@ -15,6 +15,11 @@ public struct Shortcut: Equatable, Decodable {
         modifiers = try c.decode([String].self, forKey: .modifiers)
         key = try c.decode(String.self, forKey: .key)
     }
+    public static let stacks = Shortcut(keyCode: 49, modifiers: ["control", "option"], key: "Space")
+    public static let saveStack = Shortcut(keyCode: 36, modifiers: ["control", "option"], key: "Return")
+    public func hasSameBinding(as other: Shortcut) -> Bool {
+        keyCode == other.keyCode && Set(modifiers) == Set(other.modifiers)
+    }
     public var display: String {
         ["control", "option", "shift", "command"].compactMap { name in
             modifiers.contains(name) ? ["control": "⌃", "option": "⌥", "shift": "⇧", "command": "⌘"][name] : nil

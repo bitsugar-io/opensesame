@@ -1,24 +1,38 @@
 import CoreGraphics
 
 public enum BadgeLayout {
-    public static func windowTitle(control: CGRect, badge: CGSize) -> [CGRect] {
-        [0, -1, 1, -2, 2, -3, 3].map { offset in
-            CGRect(x: control.midX - badge.width / 2 + CGFloat(offset) * (badge.width + 6),
-                   y: control.maxY - badge.height - 4, width: badge.width, height: badge.height)
-        }.filter { control.insetBy(dx: 4, dy: 0).contains($0) }
+    /// Object labels sit just inside a visible corner, with the same four-point
+    /// inset as inline tab labels. Never place over an occluding window.
+    public static func insideObject(control: CGRect, visible: [CGRect], badge: CGSize, bounds: CGRect, occupied: [CGRect]) -> CGRect? {
+        let spaces = VisibleRegion.exposed(frame: control, screens: visible.map { $0.intersection(bounds.insetBy(dx: 4, dy: 4)) }, occluders: [])
+            .sorted { $0.maxY == $1.maxY ? $0.minX < $1.minX : $0.maxY > $1.maxY }
+        for space in spaces {
+            let room = space.insetBy(dx: 4, dy: 4)
+            guard room.width >= badge.width, room.height >= badge.height else { continue }
+            for corner in [CGPoint(x: room.maxX - badge.width, y: room.maxY - badge.height), CGPoint(x: room.minX, y: room.maxY - badge.height),
+                           CGPoint(x: room.minX, y: room.minY), CGPoint(x: room.maxX - badge.width, y: room.minY)] {
+                let frame = CGRect(origin: corner, size: badge)
+                if !occupied.contains(where: { $0.insetBy(dx: -3, dy: -3).intersects(frame) }) { return frame }
+            }
+        }
+        return nil
     }
-
-    public static func inlineTabCandidates(control: CGRect, badge: CGSize) -> [CGRect] {
-        guard let preferred = inlineTab(control: control, badge: badge) else { return [] }
-        return (0..<4).map { preferred.offsetBy(dx: CGFloat($0) * (badge.width + 6), dy: 0) }
-            .filter { control.insetBy(dx: 4, dy: 0).contains($0) }
+    /// Tab choices belong inside the selected window's tab strip. A compact
+    /// vertical inset removes badge padding before reducing any glyph size.
+    public static func insideTab(control: CGRect, badge: CGSize, textHeight: CGFloat, bounds: CGRect, occupied: [CGRect]) -> CGRect? {
+        let height = min(badge.height, control.height - 2)
+        guard height >= textHeight, badge.width <= control.width - 8 else { return nil }
+        // Prefer the trailing space, then try either edge of measured titles,
+        // icons, and other hints. Keep the complete code within the tab.
+        let edges = occupied.flatMap { [$0.minX - badge.width - 4, $0.maxX + 4] }
+        let candidates = ([control.maxX - badge.width - 4, control.minX + 4, control.midX - badge.width / 2] + edges).map {
+            CGRect(x: $0, y: control.midY - height / 2, width: badge.width, height: height)
+        }
+        return candidates.first { frame in
+            control.contains(frame) && bounds.insetBy(dx: 4, dy: 4).contains(frame) &&
+            !occupied.contains { $0.insetBy(dx: -3, dy: -3).intersects(frame) }
+        }
     }
-    public static func inlineTab(control: CGRect, badge: CGSize) -> CGRect? {
-        guard control.width >= badge.width + 16, control.height >= 14 else { return nil }
-        let height = min(badge.height, control.height)
-        return CGRect(x: control.minX + 8, y: control.midY - height / 2, width: badge.width, height: height)
-    }
-
     // Keep each connector on one axis. Vary length, never the row/column.
     public static func candidates(control: CGRect, badge: CGSize, menuBar: Bool, index: Int, bounds: CGRect? = nil) -> [CGRect] {
         let gap: CGFloat = 6

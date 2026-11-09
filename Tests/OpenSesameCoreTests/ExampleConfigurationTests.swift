@@ -6,5 +6,7 @@ import Testing
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let source = try String(contentsOf: root.appendingPathComponent("config.example.toml"), encoding: .utf8)
     let configuration = try AppConfiguration.parse(source)
-    #expect(configuration == AppConfiguration())
+    var defaults = AppConfiguration()
+    defaults.stacks = StacksConfiguration() // New configurations start with no saved places.
+    #expect(configuration == defaults)
 }

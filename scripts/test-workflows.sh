@@ -89,10 +89,19 @@ if OPENSESAME_TEST_BUILD_FAIL=1 just --justfile "$fixture/justfile" start > "$fi
     exit 1
 fi
 [[ -e "$fixture/build.log" && ! -e "$fixture/launch.log" ]]
-# Permission resets use a fake tccutil, never the user's real TCC database.
+# Permission resets use fake native tools, never the user's real LS/TCC data.
+export OPENSESAME_TEST_PERMISSION_LOG="$fixture/permission.log"
+cat > "$fixture/bin/lsregister" <<'SH'
+#!/bin/zsh
+[[ "$1" == -f && "$2" == "$PWD/dist/OpenSesame.app" ]] || exit 98
+print register >> "$OPENSESAME_TEST_PERMISSION_LOG"
+if [[ "${TEST_REGISTER_FAIL:-0}" == 1 ]]; then exit 99; fi
+SH
+chmod +x "$fixture/bin/lsregister"
 cat > "$fixture/bin/tccutil" <<'SH'
 #!/bin/zsh
 [[ "$*" == 'reset Accessibility io.bitsugar.opensesame' ]] || exit 98
+print reset >> "$OPENSESAME_TEST_PERMISSION_LOG"
 case "${TEST_RESET_MODE:-success}" in
     success) print 'Successfully reset Accessibility approval status' ;;
     missing) print -u2 'tccutil: No such bundle identifier "io.bitsugar.opensesame": (OSStatus error -10814.)'; exit 64 ;;
@@ -101,13 +110,24 @@ esac
 SH
 chmod +x "$fixture/bin/tccutil"
 just --justfile "$fixture/justfile" clean > "$fixture/reset-success.log"
+[[ "$(< "$OPENSESAME_TEST_PERMISSION_LOG")" == $'register\nreset' ]]
+# Missing bundles still permit first-run cleanup, but an existing moved bundle
+# must be registered first; a failed registration must stop before TCC reset.
+mv "$fixture/dist/OpenSesame.app" "$fixture/unbuilt.app"
 TEST_RESET_MODE=missing just --justfile "$fixture/justfile" clean > "$fixture/reset-missing.log"
 [[ "$(< "$fixture/reset-missing.log")" == *'no Accessibility reset is needed'* ]]
+mv "$fixture/unbuilt.app" "$fixture/dist/OpenSesame.app"
+: > "$OPENSESAME_TEST_PERMISSION_LOG"
+if TEST_REGISTER_FAIL=1 just --justfile "$fixture/justfile" clean > "$fixture/register-failure.log" 2>&1; then
+    print -u2 'Expected clean to stop after native registration fails.'
+    exit 1
+fi
+[[ "$(< "$OPENSESAME_TEST_PERMISSION_LOG")" == register ]]
 if TEST_RESET_MODE=failure just --justfile "$fixture/justfile" clean > "$fixture/reset-failure.log" 2>&1; then
     print -u2 'Expected clean to preserve an unrelated reset failure.'
     exit 1
 fi
 [[ "$(< "$fixture/reset-failure.log")" == *'Permission reset failed'* ]]
-print '3 Accessibility reset fixture checks passed (success, unregistered app, unrelated failure).'
+print '4 Accessibility reset fixture checks passed (registration before reset, unbuilt app, registration failure, unrelated reset failure).'
 
 print '6 workflow tests passed (default lists only, run without building, existing-instance protection, missing build, start builds and launches, and build failure).'
