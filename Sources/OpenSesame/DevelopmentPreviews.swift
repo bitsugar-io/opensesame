@@ -46,6 +46,7 @@ enum DevelopmentPreviews {
         try SectionLayoutPreview.render(to: directory)
         try PlayerSectionPreview.render(to: directory)
         try WindowSelectionPreview.render(to: directory)
+        try WindowOverflowPreview.render(to: directory)
         try BlockLetteringPreview.render(to: directory)
         try HintAppearancePreview.render(to: directory)
         try StackPickerPreview.render(to: directory)

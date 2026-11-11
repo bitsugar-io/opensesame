@@ -207,6 +207,50 @@ struct HintCanvasTests {
         #expect(!view.usesLedger)
     }
 
+    @Test(arguments: [false, true]) func overflowPanelRelocatesWindowCodeWithinItsExposedArea(onLeft: Bool) throws {
+        _ = NSApplication.shared
+        let view = HintCanvas(frame: CGRect(x: 0, y: 0, width: 1600, height: 900))
+        view.screenFrame = view.bounds; view.desktopTop = view.bounds.height
+        view.windowFrame = onLeft ? CGRect(x: 500, y: 50, width: 1000, height: 800)
+            : CGRect(x: 300, y: 50, width: 800, height: 800)
+        view.scopeFrame = view.windowFrame; view.owner = 1
+        let window = CGRect(x: onLeft ? 0 : 800, y: 30, width: 800, height: 870)
+        let exposed = VisibleRegion.exposed(frame: window, screens: [view.bounds], occluders: [view.windowFrame!])
+        let choice = Target(element: AXUIElementCreateApplication(2), frame: window, label: "sss", kind: .window,
+            action: "AXRaise", clicksMenuBarExtra: false,
+            metadata: TargetMetadata(role: "AXWindow", subrole: "", title: "Background window", description: "",
+                                     owner: 2, bundleID: "preview.background", visibleFrames: exposed))
+        let tabs = Hints.labels(count: 50).enumerated().map { index, code in
+            let x = view.windowFrame!.minX + 30 + CGFloat(index * 14)
+            return Target(element: AXUIElementCreateApplication(1), frame: CGRect(x: x, y: 65, width: 8, height: 24),
+                label: "a" + code, kind: .tab, action: "AXPress", clicksMenuBarExtra: false,
+                metadata: TargetMetadata(role: "AXTab", subrole: "", title: "Example tab", description: "",
+                                         owner: 1, bundleID: "preview.foreground"))
+        }
+        view.targets = [choice] + tabs
+        for size: CGFloat in [10, 16, 22] {
+            view.fontSize = size; view.prefix = ""; view.ledgerPage = 0
+            try render(view)
+            let marker = try #require(view.regionMarkerFrames["sss"])
+            let panel = try #require(view.ledgerPanelFrame)
+            if onLeft { #expect(panel.maxX == view.windowFrame!.minX - 12) }
+            else { #expect(panel.minX == view.windowFrame!.maxX + 12) }
+            #expect(!panel.insetBy(dx: -5, dy: -5).intersects(marker))
+            #expect(exposed.contains { CGRect(x: $0.minX, y: view.desktopTop - $0.maxY, width: $0.width, height: $0.height).contains(marker) })
+            #expect(!view.overflowLabels.contains("sss"))
+            let color = try #require(view.drawnAccents["sss"])
+            #expect(color == view.sectionOutlineAccents["sss"])
+            view.ledgerPage = 1
+            try render(view)
+            #expect(view.regionMarkerFrames["sss"] == marker)
+            view.prefix = "s"
+            try render(view)
+            #expect(view.regionMarkerFrames == ["sss": marker])
+            #expect(view.drawnAccents["sss"] == color)
+            #expect(!view.usesLedger)
+        }
+    }
+
     @Test func crowdedControlPanelKeepsFittingTabsInlineAndNarrowTabsReachable() throws {
         let view = canvas()
         view.prefersActionPanel = true
