@@ -401,7 +401,10 @@ OpenSesame design choices; they need rendered and live usability checks.
   queued scan results as well as hiding the overlay.
   If an exposed strip cannot hold a complete code, the action panel identifies
   the window by title. A crowded control panel must preserve other windows'
-  spatial selectors wherever they fit.
+  spatial selectors wherever they fit. If a panel covers a window code, try
+  another exposed part of that same window before moving its choice into the
+  action panel. Resolve this before filtering or paging so its position, code,
+  and color remain stable throughout the interaction.
   Compute window occlusion from normal application windows. WindowServer's
   surface alpha does not prove that a system overlay's pixels are opaque;
   screen-sized notification canvases must not hide all window choices.
@@ -551,6 +554,8 @@ It verifies that filtering and overflow preserve each tag's family and shade.
 `layout-window-selection-*` exercises exposed
 windows across apps, a transparent system overlay, a partly covered background
 window, and inline tabs without a redundant selector for the current window.
+`window-overflow-*` keeps a background window's block code visible beside a
+crowded foreground panel on either side, across hint sizes and provider identities.
 `layout-player-*` replays sanitized Spotify control geometry through three regions,
 two subregions, and the individual Play hint; its content is synthetic and does
 not test live playback. `block-lettering-*` shows every glyph beside the original

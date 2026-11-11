@@ -4,7 +4,7 @@ import OpenSesameBrand
 
 private struct DrawnHint {
     let label: String
-    let badge: CGRect
+    var badge: CGRect
     let accent: NSColor
     let text: NSAttributedString
     let connector: NSBezierPath
@@ -253,6 +253,26 @@ final class HintCanvas: NSView {
                 }
                 overflowReservations = reservations
                 let panels = ledgerGroups(overflowTargets).map { ledgerGeometry(for: $0, avoid: reservations).panel }
+                // A panel may cover a window's first marker placement while
+                // leaving ample exposed window space beside it. Try that space
+                // before moving the window choice into a later overflow page.
+                // Keep these panel reservations through drawing and filtering.
+                for index in drawings.indices {
+                    let drawing = drawings[index]
+                    guard drawing.isRegion, !missing.contains(drawing.label),
+                          let target = targets.first(where: { $0.label == drawing.label && $0.kind == .window }),
+                          panels.contains(where: { $0.insetBy(dx: -5, dy: -5).intersects(drawing.badge) }) else { continue }
+                    let others = drawings.enumerated().filter { $0.offset != index && !missing.contains($0.element.label) }.map { _, other in
+                        other.caption == nil ? other.badge : other.badge.union(other.badge.offsetBy(dx: 0, dy: -captionHeight))
+                    }
+                    let frame = regionFrame(target)
+                    if let marker = RegionMarkerLayout.place(region: frame,
+                        visible: target.metadata.visibleFrames?.map(local) ?? [frame],
+                        aspectRatio: BlockLettering.aspectRatio(for: target.label), fontSize: fontSize,
+                        bounds: bounds, occupied: others + panels) {
+                        drawings[index].badge = marker
+                    }
+                }
                 let covered = drawings.filter { drawing in
                     let reservation = drawing.caption == nil ? drawing.badge
                         : drawing.badge.union(drawing.badge.offsetBy(dx: 0, dy: -captionHeight))
