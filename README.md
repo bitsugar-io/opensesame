@@ -29,18 +29,14 @@ places when you want to return quickly.
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><a href="asset/layout-window-selection-light.png"><img src="asset/layout-window-selection-light.png" height="220" alt="Illustrated window selection with block-letter codes on exposed windows and compact hints inside the active window's tabs"></a></td>
-    <td align="center" width="50%"><a href="asset/screenshots/spotify-sections.png"><img src="asset/screenshots/spotify-sections.png" height="220" alt="Three Spotify regions, with the bottom purple region including playback controls"></a></td>
+    <td align="center" width="25%"><a href="asset/layout-window-selection-light.png"><img src="asset/layout-window-selection-light.png" height="170" alt="Illustrated window selection with block-letter codes on exposed windows and compact hints inside the active window's tabs"></a></td>
+    <td align="center" width="25%"><a href="asset/screenshots/spotify-sections.png"><img src="asset/screenshots/spotify-sections.png" height="170" alt="Three Spotify regions, with the bottom purple region including playback controls"></a></td>
+    <td align="center" width="25%"><a href="asset/stacks-places-dark.png"><img src="asset/stacks-places-dark.png" height="170" alt="Numbered saved places in the stacks picker"></a></td>
+    <td align="center" width="25%"><a href="asset/settings-hints.png"><img src="asset/settings-hints.png" height="170" alt="OpenSesame hint shortcut and size settings"></a></td>
   </tr>
   <tr>
     <td align="center"><sub>Choose a window · rendered example</sub></td>
     <td align="center"><sub>Choose a section · cropped live capture</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="asset/stacks-places-dark.png"><img src="asset/stacks-places-dark.png" height="220" alt="Numbered saved places in the stacks picker"></a></td>
-    <td align="center"><a href="asset/settings-hints.png"><img src="asset/settings-hints.png" height="220" alt="OpenSesame hint shortcut and size settings"></a></td>
-  </tr>
-  <tr>
     <td align="center"><sub>Return to a saved place · rendered example</sub></td>
     <td align="center"><sub>Tune the shortcuts · rendered settings</sub></td>
   </tr>
