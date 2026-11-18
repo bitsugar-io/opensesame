@@ -38,7 +38,7 @@ places when you want to return quickly.
   </tr>
   <tr>
     <td align="center"><a href="asset/stacks-places-dark.png"><img src="asset/stacks-places-dark.png" height="220" alt="Numbered saved places in the stacks picker"></a></td>
-    <td align="center"><a href="asset/settings-hints.png"><img src="asset/settings-hints.png" height="220" alt="OpenSesame hint shortcut and size settings"></a></td>
+    <td align="center"><a href="asset/settings-hints.png"><img src="asset/settings-hints.png" height="400" alt="OpenSesame hint shortcut and size settings"></a></td>
   </tr>
   <tr>
     <td align="center"><sub>Return to a saved place · rendered example</sub></td>
